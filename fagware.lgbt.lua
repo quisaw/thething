@@ -201,7 +201,7 @@ local visualVisibleColors = visualTab:CreateGroupbox({
 
 local visualInvisibleColors = visualTab:CreateGroupbox({
     Name = 'Invisible Colors',
-    Column = 3,
+    Column = 2,
 }, 'fuckmylifept2')
 
 local visualToggle = visualBox:CreateToggle({
