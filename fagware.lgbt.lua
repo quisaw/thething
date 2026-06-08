@@ -1,8 +1,6 @@
 local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
--- local Twilight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/twilight"))()
-
-local Sense = loadstring(game:HttpGet('https://sirius.menu/sense'))()
+local Twilight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/twilight"))()
 
 local Window = Starlight:CreateWindow({
     Name = 'Fagware.LGBT',
@@ -196,17 +194,23 @@ local visualBox = visualTab:CreateGroupbox({
     Column = 1,
 }, 'badussy')
 
-local visualColors = visualTab:CreateGroupbox({
+local visualVisibleColors = visualTab:CreateGroupbox({
     Name = 'Colors',
     Column = 2,
 }, 'fuckmylife')
+
+local visualInvisibleColors = visualTab:CreateGroupbox({
+    Name = 'Invisible Colors',
+    Column = 3,
+}, 'fuckmylifept2')
 
 local visualToggle = visualBox:CreateToggle({
     Name = 'Enable',
     CurrentValue = false,
     Callback = function(Value)
-
-        Sense.teamSettings.enemy.enabled = Value
+        Twilight:SetOptions({
+            Enabled = Value
+        })
         print('ESP Enabled')
     end,
 }, 'boypussy')
@@ -215,22 +219,57 @@ local boxToggle = visualBox:CreateToggle({
     Name = 'Enable Boxes',
     CurrentValue = false,
     Callback = function(Value)
-
-        Sense.teamSettings.enemy.box = Value
+        Twilight:SetOptions({
+            Box = {
+                Style = Twilight.Enums.BoxStyle.Normal,
+                Enabled = Value
+            }
+        })
         print('Boxes Enabled')
     end,
 }, 'butthole')
 
-local boxColorLabel = visualColors:CreateLabel({
-    Name = 'Box Colors'
+local boxColorLabel = visualVisibleColors:CreateLabel({
+    Name = 'Box Visible Colors'
 }, 'dickass')
 
-local boxColors = boxColorLabel:AddColorPicker({
+local boxVisibleColors = boxColorLabel:AddColorPicker({
     CurrentValue = Color3.fromRGB(33,217,64),
     Callback = function(Color)
-        Sense.teamSettings.enemy.boxColor = Color
+        Twilight:SetOptions({
+            currentColors = {
+                generic = {
+                    Box = {
+                        Outline = {
+                            Visible = Color3.New(Color)
+                        }
+                    }
+                }
+            }
+        })
     end
 }, 'imafuckup')
+
+local boxInvisibleColors = visualInvisibleColors:CreateLabel({
+    Name = 'Box Invisible Colors'
+}, 'dickass')
+
+local boxInvisibleColorPicker = boxInvisibleColors:AddColorPicker({
+    CurrentValue = Color3.fromRGB(33,217,64),
+    Callback = function(Color)
+        Twilight:SetOptions({
+            currentColors = {
+                generic = {
+                    Box = {
+                        Outline = {
+                            Invisible = Color3.New(Color)
+                        }
+                    }
+                }
+            }
+        })
+    end
+}, 'imafuckuppt2')
 
 local Dialog = Window:PromptDialog({
     Name = 'Fagware.LGBT',
@@ -262,9 +301,6 @@ local Notifications = Starlight:Notification({
 
 Starlight:LoadAutoloadConfig()
 
-Sense.Load()
-
 Starlight:OnDestroy(function()
-    -- Twilight:Unload()
-    Sense.Unload()
+    Twilight:Unload()
 end)
