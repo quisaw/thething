@@ -7,5 +7,5 @@ Shitass fuckin script for whatever roblox games we feel like making things for
 ## Authors
 
 - [@plutouwu](https://github.com/quisaw)
-- [@whiskrr](https://github.com/2vim)
+- [@whiskr](https://github.com/2vim)
 - [@zuachy](zuachy put your fucking link here)
