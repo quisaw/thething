@@ -1,11 +1,11 @@
-local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()  
+local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starlight"))()
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
-local Twilight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/twilight"))()
+-- local Twilight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/twilight"))()
 
--- local Sense = loadstring(game:HttpGet('https://sirius.menu/sense'))()
+local Sense = loadstring(game:HttpGet('https://sirius.menu/sense'))()
 
 local Window = Starlight:CreateWindow({
-    Name = 'Fagware.lgbt',
+    Name = 'Fagware.LGBT',
     Subtitle = 'v1',
     Icon = 123456789,
     LoadingEnabled = true,
@@ -15,17 +15,17 @@ local Window = Starlight:CreateWindow({
 
     LoadingSettings = {
         Title = 'Loading',
-        Subtitle = 'Loading Fagware.lgbt',
+        Subtitle = 'Loading Fagware.LGBT',
     },
 
     FileSettings = {
-        RootFolder = 'Pluto Light',
-        ConfigFolder = 'Fagware.lgbt Configs',
+        RootFolder = 'Fagware.LGBT',
+        ConfigFolder = 'Fagware.LGBT Configs',
     },
 })
 Starlight:LoadAutoloadTheme()
 Window:CreateHomeTab({
-    SupportedExecutors = {'ChocoSploit', 'Potassium', 'Cosmic', 'Volt', 'Serotonin', 'Synapse Z', 'Opiumware', 'Macsploit', 'AWP.gg', 'Krampus', 'Iniuria'},
+    SupportedExecutors = {'ChocoSploit', 'Potassium', 'Cosmic', 'Volt', 'Serotonin', 'Synapse Z', 'Opiumware', 'Macsploit', 'AWP.gg', 'Krampus', 'Iniuria', 'Plutonium CS2'},
     UnsupportedExecutors = {'Xeno', 'Solara', 'Wave', 'Velocity', 'Sirhurt', 'Madium', 'Seliware', 'Delta', 'Codex', 'Vega X'},
 
     DiscordInvite = 'QuH54Wj5Gv',
@@ -35,9 +35,9 @@ Window:CreateHomeTab({
 
     Changelog = {
         {
-            Title = '"release"',
-            Date = '26.01.27',
-            Description = 'The "release" of \n Pluto Light',
+            Title = '"skid time"',
+            Date = '26.06.08',
+            Description = 'The "skid" of \n Fagware.lgbt',
         },
     }
 })
@@ -205,8 +205,8 @@ local visualToggle = visualBox:CreateToggle({
     Name = 'Enable',
     CurrentValue = false,
     Callback = function(Value)
-        
-        -- Sense.teamSettings.enemy.enabled = Value
+
+        Sense.teamSettings.enemy.enabled = Value
         print('ESP Enabled')
     end,
 }, 'boypussy')
@@ -215,8 +215,8 @@ local boxToggle = visualBox:CreateToggle({
     Name = 'Enable Boxes',
     CurrentValue = false,
     Callback = function(Value)
-        
-        -- Sense.teamSettings.enemy.box = Value
+
+        Sense.teamSettings.enemy.box = Value
         print('Boxes Enabled')
     end,
 }, 'butthole')
@@ -233,7 +233,7 @@ local boxColors = boxColorLabel:AddColorPicker({
 }, 'imafuckup')
 
 local Dialog = Window:PromptDialog({
-    Name = 'Header',
+    Name = 'Fagware.LGBT',
     Content = 'Description',
     Type = 1,
     Actions = {
@@ -265,6 +265,6 @@ Starlight:LoadAutoloadConfig()
 Sense.Load()
 
 Starlight:OnDestroy(function()
-    Twilight:Unload()
-    -- Sense.Unload()
+    -- Twilight:Unload()
+    Sense.Unload()
 end)
