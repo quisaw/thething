@@ -4,6 +4,12 @@ local Starlight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/starl
 local NebulaIcons = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/nebula-icon-library-loader"))()
 local Twilight = loadstring(game:HttpGet("https://raw.nebulasoftworks.xyz/twilight"))()
 
+Twilight:SetOptions({
+    Radar = {
+        Enabled = false
+    }
+})
+
 local Window = Starlight:CreateWindow({
     Name = 'Fagware.LGBT',
     Subtitle = 'v1',
@@ -41,6 +47,8 @@ Window:CreateHomeTab({
         },
     }
 })
+
+
 
 local TabSection = Window:CreateTabSection('Tab Section')
 
@@ -182,5 +190,6 @@ local Notifications = Starlight:Notification({
 Starlight:LoadAutoloadConfig()
 
 Starlight:OnDestroy(function()
+    Twilight:SetOptions({ Enabled = false })
     Twilight:Unload()
 end)
