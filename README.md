@@ -1,6 +1,7 @@
 # Fagware.lgbt
 
 Shitass fuckin script for whatever roblox games we feel like making things for
+
 ![Static Badge](https://img.shields.io/badge/skidded%3f-yes-pink)
 
 ## Authors
