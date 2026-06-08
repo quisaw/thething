@@ -41,13 +41,9 @@ Window:CreateHomeTab({
         },
     }
 })
+
 local TabSection = Window:CreateTabSection('Tab Section')
---[[ local Tab = TabSection:CreateTab({
-    Name = 'Tab',
-    Icon = NebulaIcons:GetIcon('view_in_ar', 'Material'),
-    Columns = 2,
-}, 'beans')
-]]--
+
 local visualTab = TabSection:CreateTab({
     Name = 'Visuals',
     Icon = NebulaIcons:GetIcon('opacity', 'Material'),
@@ -63,141 +59,13 @@ local configTab = TabSection:CreateTab({
 configTab:BuildThemeGroupbox(1, 1, true)
 configTab:BuildConfigGroupbox(2, 1, true)
 
---[[ local Groupbox = Tab:CreateGroupbox({
-    Name = 'Groupbox',
-    Column = 1,
-}, 'knots')
-
-local Button = Groupbox:CreateButton({
-    Name = 'Button',
-    Icon = NebulaIcons:GetIcon('check', 'Material'),
-    IndicatorStyle = 1,
-    Callback = function()
-        print('Button 1 Pressed')
-    end,
-}, 'paws')
-
-local Button2 = Groupbox:CreateButton({
-    Name = 'Button Style 2',
-    Icon = NebulaIcons:GetIcon('check', 'Material'),
-    IndicatorStyle = 2,
-    Style = 1,
-    Callback = function()
-        print('Button 2 Pressed')
-    end,
-}, 'claws')
-
-local Toggle = Groupbox:CreateToggle({
-    Name = 'Toggle',
-    CurrentValue = false,
-    Callback = function(Value)
-        print('Toggled ', tostring(Value))
-    end
-}, 'penis')
-
-local Slider = Groupbox:CreateSlider({
-    Name = 'Slider',
-    Icon = NebulaIcons:GetIcon('Chart-no-axes-column-increasing', 'Lucide'),
-    Range = {0, 100},
-    Increment = 1,
-    Callback = function(Value)
-        print('Slider Value: ', tostring(Value))
-    end
-}, 'dick')
-
-local Input = Groupbox:CreateInput({
-    Name = 'Dynamic Input',
-    Icon = NebulaIcons:GetIcon('text-cursor-input', 'Lucide'),
-    CurrentValue = '',
-    PlaceholderText = 'Placeholder Text',
-    Enter = true,
-    Callback = function(Text)
-        print('Current Text Input: ', Text)
-    end,
-}, 'balls')
-
-local Label = Groupbox:CreateLabel({
-    Name = 'Label',
-}, 'cock')
-
-local Label2 = Groupbox:CreateLabel({
-    Name = 'Toggle Bind',
-}, 'weenor')
-
-local Label3 = Groupbox:CreateLabel({
-    Name = 'Hold Bind',
-}, 'plongus')
-
-local Label4 = Groupbox:CreateLabel({
-    Name = 'ColorPicker',
-}, 'ungabunga')
-
-local Label5 = Groupbox:CreateLabel({
-    Name = 'Single Dropdown',
-}, 'fucky')
-
-local Label6 = Groupbox:CreateLabel({
-    Name = 'Multi Dropdown',
-}, 'wucky')
-
-local Paragraph = Groupbox:CreateParagraph({
-    Name = 'Paragraph',
-    Content = 'Hello! Im A Paragraph, And I Can Store A Bunch Of Text. \nI Also Grow Bigger Or Smaller Depending On How Much Text Is In My Body! \nLike This, I Am A Much Bigger Paragraph Than The Other One!',
-}, 'nuts')
-
-local Bind = Label2:AddBind({
-    HoldToInteract = false,
-    CurrentValue = 'Q',
-    Callback = function(Value)
-        print('Toggle Bind Is: ', tostring(Value))
-    end
-}, 'bingus')
-
-local Bind2 = Label3:AddBind({
-    HoldToInteract = true,
-    CurrentValue = 'E',
-    Callback = function(Value)
-        print('Hold Bind Is: ', tostring(Value))
-    end
-}, 'schmingus')
-
-local ColorPicker = Label4:AddColorPicker({
-    CurrentValue = Color3.fromRGB(33, 217, 64),
-    Transparency = 1,
-    Callback = function(Color)
-        print('Color Is Set To: ', tostring(Color))
-    end
-}, 'moan')
-
-local Dropdown = Label5:AddDropdown({
-    Options = {'Option 1', 'Option 2'},
-    CurrentOptions = {'Option 1'},
-    Placeholder = 'None Selected',
-    Callback = function(Options)
-        print('Current Selection For Single Dropdown: ', tostring(Options))
-    end
-}, 'cuck')
-
-local Dropdown2 = Label6:AddDropdown({
-    Options = {'Option 1', 'Option 2'},
-    CurrentOptions = {'Option 1'},
-    Placeholder = 'None Selected',
-    MultipleOptions = true,
-    Callback = function(Options)
-        print('Current Selections For Multi Dropdown: ', tostring(Options))
-    end
-}, 'guh')
-
-local Divider = Groupbox:CreateDivider()
-]]--
-
 local visualBox = visualTab:CreateGroupbox({
     Name = 'ESP',
     Column = 1,
 }, 'badussy')
 
 local visualVisibleColors = visualTab:CreateGroupbox({
-    Name = 'Colors',
+    Name = 'Visible Colors',
     Column = 2,
 }, 'fuckmylife')
 
@@ -213,7 +81,6 @@ local visualToggle = visualBox:CreateToggle({
         Twilight:SetOptions({
             Enabled = Value
         })
-        print('ESP Enabled')
     end,
 }, 'boypussy')
 
@@ -227,23 +94,34 @@ local boxToggle = visualBox:CreateToggle({
                 Enabled = Value
             }
         })
-        print('Boxes Enabled')
     end,
 }, 'butthole')
 
+local boxLocalToggle = visualBox:CreateToggle({
+    Name = 'Enable Local Boxes',
+    CurrentValue = false,
+    Callback = function(Value)
+        Twilight:SetOptions({
+            Box = {
+                Local = Value
+            }
+        })
+    end,
+}, 'buttholept2')
+
 local boxColorLabel = visualVisibleColors:CreateLabel({
-    Name = 'Box Visible Colors'
+    Name = 'Box Visible Color'
 }, 'dickass')
 
 local boxVisibleColors = boxColorLabel:AddColorPicker({
-    CurrentValue = Color3.fromRGB(33,217,64),
+    CurrentValue = Color3.fromRGB(33, 217, 64),
     Callback = function(Color)
         Twilight:SetOptions({
-            currentColors = {
-                generic = {
+            Colors = {
+                Generic = {
                     Box = {
                         Outline = {
-                            Visible = Color3.New(Color)
+                            Visible = Color
                         }
                     }
                 }
@@ -252,19 +130,19 @@ local boxVisibleColors = boxColorLabel:AddColorPicker({
     end
 }, 'imafuckup')
 
-local boxInvisibleColors = visualInvisibleColors:CreateLabel({
-    Name = 'Box Invisible Colors'
-}, 'dickass')
+local boxInvisibleLabel = visualInvisibleColors:CreateLabel({
+    Name = 'Box Invisible Color'
+}, 'dickass2')
 
-local boxInvisibleColorPicker = boxInvisibleColors:AddColorPicker({
-    CurrentValue = Color3.fromRGB(33,217,64),
+local boxInvisibleColorPicker = boxInvisibleLabel:AddColorPicker({
+    CurrentValue = Color3.fromRGB(255, 0, 0),
     Callback = function(Color)
         Twilight:SetOptions({
-            currentColors = {
-                generic = {
+            Colors = {
+                Generic = {
                     Box = {
                         Outline = {
-                            Invisible = Color3.New(Color)
+                            Invisible = Color
                         }
                     }
                 }
