@@ -31,8 +31,8 @@ local Window = Starlight:CreateWindow({
 })
 Starlight:LoadAutoloadTheme()
 Window:CreateHomeTab({
-    SupportedExecutors = {'ChocoSploit', 'Potassium', 'Cosmic', 'Volt', 'Serotonin', 'Synapse Z', 'Opiumware', 'Macsploit', 'AWP.gg', 'Krampus', 'Iniuria', 'Plutonium CS2'},
-    UnsupportedExecutors = {'Xeno', 'Solara', 'Wave', 'Velocity', 'Sirhurt', 'Madium', 'Seliware', 'Delta', 'Codex', 'Vega X'},
+    SupportedExecutors = {'ChocoSploit', 'Potassium', 'Cosmic', 'Volt', 'Serotonin', 'Synapse Z', 'Opiumware', 'Macsploit', 'AWP.gg', 'Krampus', 'Iniuria', 'Skeet.cc', 'Plutonium CS2'},
+    UnsupportedExecutors = {'Xeno', 'Solara', 'Wave', 'Velocity', 'Sirhurt', 'Madium', 'Seliware', 'Delta', 'Codex', 'Vega X', 'Gamesense'},
 
     DiscordInvite = 'QuH54Wj5Gv',
     Backdrop = nil,
