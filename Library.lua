@@ -357,17 +357,18 @@ local Library = {
 
     ImageManager = CustomImageManager;
 
-    -- ── Starlight state (do not set manually) ────────────────
-    _tabLayout      = "Top";  -- "Top" (default/off) | "Side"
-    _iconsVisible   = false;  -- icons off by default
+    -- Starlight state
+    _tabLayout      = "Top";
+    _iconsVisible   = false;
     _sidebarButtons = {};
-    _tabIconData    = {};     -- [tabObj] = "rbxassetid://NNN"
+    _tabIconData    = {};
     _sidebarFrame   = nil;
-    _orderedTabs    = {};     -- {tab=tabObj, name="..."} in order
-    -- live references set inside CreateWindow:
-    _MSI            = nil;    -- MainSectionInner frame
-    _TabArea        = nil;    -- horizontal tab ScrollingFrame
-    _TabContainer   = nil;    -- tab content Frame
+    _orderedTabs    = {};
+    _MSI            = nil;
+    _TabArea        = nil;
+    _TabContainer   = nil;
+    _origTCPos      = nil;
+    _origTCSize     = nil;
 }
 
 -- Controller key mapping - moved to global scope for use in keybind handlers
@@ -11044,17 +11045,19 @@ end
     Window.Holder = Outer
     Library.Window = Window
 
-    -- Store direct references to the key frames so sidebar/icon code
-    -- never has to guess or walk the hierarchy.
+    -- Store direct references — no hierarchy walking needed at runtime
     Library._MSI          = MainSectionInner
     Library._TabArea      = TabArea
     Library._TabContainer = TabContainer
 
-    -- Record AddTab insertion order for the sidebar button list.
+    -- Reset per-window sidebar state
     Library._orderedTabs    = {}
     Library._sidebarButtons = {}
     Library._sidebarFrame   = nil
+    Library._origTCPos      = nil
+    Library._origTCSize     = nil
 
+    -- Wrap AddTab to record insertion order
     local _origAddTab = Window.AddTab
     function Window:AddTab(Name, ...)
         local tab = _origAddTab(self, Name, ...)
@@ -11065,12 +11068,11 @@ end
     end
 
     task.defer(function()
-        task.wait()   -- let SnowFall finish its own deferred layout
+        task.wait()
 
-        -- A. UICorner + UIStroke on every Frame.
-        --    Guard: ONLY call :IsA("Frame") — never access .AbsoluteSize on
-        --    UICorner/UIStroke/UIListLayout/etc. That's what caused the
-        --    "Size is not a valid member of UICorner" errors.
+        -- UICorner + UIStroke on Frame instances only.
+        -- Critical: check :IsA("Frame") before ANY property access.
+        -- UICorner/UIStroke/UIListLayout do NOT have AbsoluteSize.
         for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
             if inst:IsA("Frame") and not inst:IsA("ScrollingFrame") then
                 pcall(function()
@@ -11081,16 +11083,16 @@ end
                     Instance.new("UICorner", inst).CornerRadius = UDim.new(0, 6)
                     if inst.BackgroundTransparency < 1 then
                         local us = Instance.new("UIStroke")
-                        us.Color           = Library.OutlineColor
-                        us.Thickness       = 1
+                        us.Color = Library.OutlineColor
+                        us.Thickness = 1
                         us.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                        us.Parent          = inst
+                        us.Parent = inst
                     end
                 end)
             end
         end
 
-        -- B. Watermark AutomaticSize so long text is never clipped.
+        -- Watermark AutomaticSize
         for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
             if inst.Name and inst.Name:lower():find("watermark") then
                 pcall(function()
@@ -11102,8 +11104,7 @@ end
             end
         end
 
-        -- C. Apply sidebar if caller set Library:SetTabLayout("Side") before
-        --    CreateWindow, or apply top-bar icons if icons are on.
+        -- Sidebar / icons
         if Library._tabLayout == "Side" then
             Library:ApplySidebarLayout()
         elseif Library._iconsVisible then
@@ -11367,7 +11368,7 @@ end
 --  STARLIGHT ADDITIONS
 -- ════════════════════════════════════════════════════════════════════════════
 
--- ── Cursor hide + shift-lock key sink ─────────────────────────────────────────
+-- Cursor hide + shift-lock sink
 do
     local _CAS  = cloneref(game:GetService("ContextActionService"))
     local _SINK = "SnowFallStarlightSink"
@@ -11402,8 +11403,7 @@ function Library:SetTabLayout(layout)
 end
 
 -- SetTabIconData(tabObj, "rbxassetid://NNN")
--- Call after Window:AddTab() with a resolved asset id.
--- Immediately applies the icon wherever it is currently visible.
+-- Stores the icon and immediately applies it wherever visible.
 function Library:SetTabIconData(tabObj, imageId)
     if not tabObj then return end
     Library._tabIconData[tabObj] = imageId
@@ -11420,13 +11420,13 @@ function Library:SetTabIconData(tabObj, imageId)
         end
     end
 
-    -- Apply to top-bar button if icons are enabled and no sidebar
+    -- Apply to top-bar button when icons are on and no sidebar active
     if Library._iconsVisible and (not Library._sidebarFrame or not Library._sidebarFrame.Visible) then
         Library:_ApplyTopBarIcon(tabObj, imageId)
     end
 end
 
--- SetTabIconsVisible(bool) — toggle icon visibility live
+-- SetTabIconsVisible — toggle icon visibility live
 function Library:SetTabIconsVisible(visible)
     Library._iconsVisible = visible == true
 
@@ -11450,43 +11450,71 @@ function Library:SetTabIconsVisible(visible)
             local icon = btn:FindFirstChild("_StarlightIcon")
             if visible then
                 if icon then
-                    icon.Visible     = true
-                    lbl.Position     = UDim2.new(0, 22, 0, 0)
-                    lbl.Size         = UDim2.new(1, -22, 1, 0)
+                    icon.Visible = true
+                    lbl.Position = UDim2.new(0, 26, 0, 0)
+                    lbl.Size     = UDim2.new(1, -26, 1, -1)
                 elseif Library._tabIconData[d.tab] then
                     Library:_ApplyTopBarIcon(d.tab, Library._tabIconData[d.tab])
                 end
             else
                 if icon then
                     icon.Visible = false
+                    -- Restore original label bounds (no icon)
                     lbl.Position = UDim2.new(0, 0, 0, 0)
                     lbl.Size     = UDim2.new(1, 0, 1, -1)
+                    -- Shrink button back
+                    btn.Size = UDim2.new(btn.Size.X.Scale,
+                                         btn.Size.X.Offset - 26,
+                                         btn.Size.Y.Scale,
+                                         btn.Size.Y.Offset)
                 end
             end
         end
     end
 end
 
--- Internal: attach one icon ImageLabel to a top-bar tab button
+-- Internal: attach icon to one top-bar tab button and resize the button.
+-- ICON_LEFT  = 4px  (gap from button left edge to icon left edge)
+-- ICON_W     = 14px
+-- ICON_GAP   = 8px  (gap from icon right edge to text left edge — matches ICON_LEFT visually)
+-- TOTAL_EXTRA= 4+14+8 = 26px added to button width and label offset
 function Library:_ApplyTopBarIcon(tabObj, imageId)
     local lbl = tabObj.ButtonLabel
     if not lbl then return end
-    local btn = lbl.Parent
+    local btn = lbl.Parent   -- TabButton Frame
     if not btn then return end
+
     local existing = btn:FindFirstChild("_StarlightIcon")
-    if existing then existing.Image = imageId; return end
+    if existing then
+        existing.Image = imageId
+        return
+    end
+
+    local ICON_LEFT  = 4
+    local ICON_W     = 14
+    local ICON_GAP   = ICON_LEFT   -- same padding on both sides of icon
+    local TOTAL      = ICON_LEFT + ICON_W + ICON_GAP  -- = 26
+
     local img = Instance.new("ImageLabel")
     img.Name                   = "_StarlightIcon"
     img.BackgroundTransparency = 1
-    img.Size                   = UDim2.fromOffset(14, 14)
     img.AnchorPoint            = Vector2.new(0, 0.5)
-    img.Position               = UDim2.new(0, 4, 0.5, 0)
+    img.Position               = UDim2.new(0, ICON_LEFT, 0.5, 0)
+    img.Size                   = UDim2.fromOffset(ICON_W, ICON_W)
     img.Image                  = imageId
     img.ImageColor3            = Color3.fromRGB(161, 169, 225)
     img.ZIndex                 = lbl.ZIndex + 1
     img.Parent                 = btn
-    lbl.Position               = UDim2.new(0, 22, 0, 0)
-    lbl.Size                   = UDim2.new(1, -22, 1, 0)
+
+    -- Shift label right and shrink it so text doesn't overflow
+    lbl.Position = UDim2.new(0, TOTAL, 0, 0)
+    lbl.Size     = UDim2.new(1, -TOTAL, 1, -1)
+
+    -- Widen the tab button so the full text is still visible
+    btn.Size = UDim2.new(btn.Size.X.Scale,
+                          btn.Size.X.Offset + TOTAL,
+                          btn.Size.Y.Scale,
+                          btn.Size.Y.Offset)
 end
 
 function Library:_ApplyTopBarIcons()
@@ -11496,71 +11524,73 @@ function Library:_ApplyTopBarIcons()
     end
 end
 
--- ── Sidebar layout ────────────────────────────────────────────────────────────
--- The sidebar lives inside MainSectionInner (stored as Library._MSI).
--- TabArea is hidden; TabContainer is shifted right.
--- Original TabContainer position/size are saved so RemoveSidebarLayout can
--- restore them exactly.
+-- ── Sidebar ────────────────────────────────────────────────────────────────────
+-- Sidebar lives inside MainSectionInner (Library._MSI).
+-- TabArea is hidden. TabContainer is shifted right.
 
-local _SIDEBAR_W = 140   -- sidebar width in pixels
+local _SW = 140  -- sidebar width in pixels
 
 function Library:ApplySidebarLayout()
     if #Library._orderedTabs == 0 then return end
-    local MSI = Library._MSI
+    local MSI     = Library._MSI
     local TabArea = Library._TabArea
-    local TC = Library._TabContainer
+    local TC      = Library._TabContainer
     if not (MSI and TabArea and TC) then return end
 
-    -- Hide the horizontal tab bar
+    -- Hide top tab bar
     TabArea.Visible = false
 
-    -- Shift the content area to the right of the sidebar.
-    -- Save originals once so repeated toggles don't drift.
+    -- Save original TC layout for restore (once only)
     if not Library._origTCPos then
         Library._origTCPos  = TC.Position
         Library._origTCSize = TC.Size
     end
-    TC.Position = UDim2.new(0, _SIDEBAR_W + 4, 0, 4)
-    TC.Size     = UDim2.new(1, -(_SIDEBAR_W + 12), 1, -12)
+    -- Shift content right to make room for sidebar
+    TC.Position = UDim2.new(0, _SW + 4, 0, 4)
+    TC.Size     = UDim2.new(1, -(_SW + 12), 1, -12)
 
     if Library._sidebarFrame then
         Library._sidebarFrame.Visible = true
         return
     end
 
-    -- Build the sidebar frame directly in MainSectionInner
+    -- ── Build sidebar in MainSectionInner ──────────────────────────────────
     local sb = Instance.new("Frame")
     sb.Name             = "StarlightSidebar"
     sb.BackgroundColor3 = Color3.fromRGB(23, 25, 29)
     sb.BorderSizePixel  = 0
     sb.Position         = UDim2.new(0, 0, 0, 0)
-    sb.Size             = UDim2.new(0, _SIDEBAR_W, 1, 0)
+    sb.Size             = UDim2.new(0, _SW, 1, 0)
     sb.ZIndex           = 10
     sb.Parent           = MSI
-    Instance.new("UICorner", sb).CornerRadius = UDim.new(0, 6)
+    Instance.new("UICorner", sb).CornerRadius = UDim.new(0, 4)
 
-    -- Right-edge accent line
+    -- Right-edge divider: MUST be a sibling of sb in MSI, NOT a child of sb.
+    -- A child of sb with Size.Y.Scale=1 would participate in sb's UIListLayout
+    -- and push all buttons to the very bottom of the window.
     local line = Instance.new("Frame")
     line.BackgroundColor3 = Color3.fromRGB(44, 47, 54)
     line.BorderSizePixel  = 0
-    line.Position         = UDim2.new(1, -1, 0, 0)
+    line.Position         = UDim2.new(0, _SW, 0, 0)   -- right edge of sidebar
     line.Size             = UDim2.new(0, 1, 1, 0)
-    line.ZIndex           = 11
-    line.Parent           = sb
+    line.ZIndex           = 10
+    line.Parent           = MSI  -- sibling of sb, NOT child
 
-    -- Layout
+    -- Vertical list layout inside sb
     local ll = Instance.new("UIListLayout")
     ll.FillDirection       = Enum.FillDirection.Vertical
     ll.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    ll.VerticalAlignment   = Enum.VerticalAlignment.Top
     ll.SortOrder           = Enum.SortOrder.LayoutOrder
     ll.Padding             = UDim.new(0, 4)
     ll.Parent              = sb
 
     local pad = Instance.new("UIPadding")
-    pad.PaddingTop   = UDim.new(0, 8)
-    pad.PaddingLeft  = UDim.new(0, 6)
-    pad.PaddingRight = UDim.new(0, 6)
-    pad.Parent       = sb
+    pad.PaddingTop    = UDim.new(0, 8)
+    pad.PaddingLeft   = UDim.new(0, 6)
+    pad.PaddingRight  = UDim.new(0, 6)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent        = sb
 
     Library._sidebarButtons = {}
 
@@ -11593,7 +11623,7 @@ function Library:ApplySidebarLayout()
         local ico = Instance.new("ImageLabel")
         ico.BackgroundTransparency = 1
         ico.AnchorPoint            = Vector2.new(0, 0.5)
-        ico.Position               = UDim2.new(0, 8, 0.5, 0)
+        ico.Position               = UDim2.new(0, 6, 0.5, 0)
         ico.Size                   = UDim2.fromOffset(16, 16)
         ico.ImageColor3            = Color3.fromRGB(100, 103, 130)
         ico.ZIndex                 = 13
@@ -11611,9 +11641,11 @@ function Library:ApplySidebarLayout()
         nm.ZIndex                 = 13
         nm.Text                   = d.name
         nm.AnchorPoint            = Vector2.new(0, 0.5)
-        nm.Position               = showIcon and UDim2.new(0,30,0.5,0) or UDim2.new(0,8,0.5,0)
-        nm.Size                   = showIcon and UDim2.new(1,-36,1,0)  or UDim2.new(1,-12,1,0)
-        nm.Parent                 = btn
+        -- Icon showing: text starts at 6(left) + 16(icon) + 6(gap) = 28
+        -- Icon hidden:  text starts at 10 (centred-ish)
+        nm.Position = showIcon and UDim2.new(0, 28, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+        nm.Size     = showIcon and UDim2.new(1, -34, 1, 0)  or UDim2.new(1, -16, 1, 0)
+        nm.Parent   = btn
 
         local entry = { button=btn, iconLabel=ico, nameLabel=nm, tab=d.tab }
         table.insert(Library._sidebarButtons, entry)
@@ -11646,13 +11678,14 @@ function Library:RemoveSidebarLayout()
         Library._sidebarFrame.Visible = false
     end
     if TabArea then TabArea.Visible = true end
-    if TC and Library._origTCPos then
-        TC.Position = Library._origTCPos
-        TC.Size     = Library._origTCSize
-    elseif TC then
-        -- safe fallback to SnowFall defaults
-        TC.Position = UDim2.new(0, 8,  0, 30)
-        TC.Size     = UDim2.new(1, -16, 1, -38)
+    if TC then
+        if Library._origTCPos then
+            TC.Position = Library._origTCPos
+            TC.Size     = Library._origTCSize
+        else
+            TC.Position = UDim2.new(0, 8,  0, 30)
+            TC.Size     = UDim2.new(1, -16, 1, -38)
+        end
     end
 end
 
