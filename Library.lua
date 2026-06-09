@@ -11426,6 +11426,10 @@ end
 --  STARLIGHT ADDITIONS
 -- ════════════════════════════════════════════════════════════════════════════
 
+-- Sidebar widths — defined at the TOP so every function below can reference them
+local _SW      = 140  -- full width (with names)
+local _SW_ICON =  44  -- narrow width (icons only)
+
 -- Cursor hide + shift-lock sink
 do
     local _CAS  = cloneref(game:GetService("ContextActionService"))
@@ -11623,9 +11627,6 @@ function Library:_ApplyTopBarIcons()
 end
 
 -- ── Sidebar ──────────────────────────────────────────────────────────────────
-local _SW      = 140  -- sidebar width with names
-local _SW_ICON =  44  -- sidebar width icon-only (no text)
-
 function Library:ApplySidebarLayout()
     if #Library._orderedTabs == 0 then return end
     local MSI = Library._MSI; local TabArea = Library._TabArea; local TC = Library._TabContainer
@@ -11942,7 +11943,7 @@ function Library:SetupHomeTab(Window, config)
         false)
 
     -- ── Left column: Changelog (stacked below Overview) ───────────────────
-    local clBox = tab:AddLeftGroupbox("Changelog")
+    local clBox = tab:AddRightGroupbox("Changelog")
     if #changelog > 0 then
         for i, entry in ipairs(changelog) do
             local ver   = entry.Version or entry.version or ""
