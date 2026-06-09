@@ -363,6 +363,7 @@ local Library = {
     _sidebarButtons = {};
     _tabIconData    = {};
     _sidebarFrame   = nil;
+    _sidebarLine    = nil;
     _orderedTabs    = {};
     _MSI            = nil;
     _TabArea        = nil;
@@ -11054,6 +11055,7 @@ end
     Library._orderedTabs    = {}
     Library._sidebarButtons = {}
     Library._sidebarFrame   = nil
+    Library._sidebarLine    = nil
     Library._origTCPos      = nil
     Library._origTCSize     = nil
 
@@ -11551,6 +11553,7 @@ function Library:ApplySidebarLayout()
 
     if Library._sidebarFrame then
         Library._sidebarFrame.Visible = true
+        if Library._sidebarLine then Library._sidebarLine.Visible = true end
         return
     end
 
@@ -11575,6 +11578,7 @@ function Library:ApplySidebarLayout()
     line.Size             = UDim2.new(0, 1, 1, 0)
     line.ZIndex           = 10
     line.Parent           = MSI  -- sibling of sb, NOT child
+    Library._sidebarLine  = line
 
     -- Vertical list layout inside sb
     local ll = Instance.new("UIListLayout")
@@ -11676,6 +11680,9 @@ function Library:RemoveSidebarLayout()
 
     if Library._sidebarFrame then
         Library._sidebarFrame.Visible = false
+    end
+    if Library._sidebarLine then
+        Library._sidebarLine.Visible = false
     end
     if TabArea then TabArea.Visible = true end
     if TC then
