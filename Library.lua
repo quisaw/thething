@@ -1778,6 +1778,8 @@ do
                 ZIndex = 110;
                 Parent = Library.KeybindContainer;
             })
+            -- Store back-reference so _RebuildKeybindList can access GetState()
+            KeybindsToggleContainer._picker = KeyPicker
 
             local KeybindsToggleOuter = Library:Create("Frame", {
                 BackgroundColor3 = Color3.new(0, 0, 0);
@@ -2014,6 +2016,37 @@ do
                 if Input.UserInputType == Enum.UserInputType.MouseButton1 then
                     UnbindButton:UnbindKey()
                 end
+            end)
+        end
+
+        -- ── "Show in Keybind List" toggle (Starlight addition) ──────────────
+        do
+            local listInRow = Library:Create("Frame", {
+                BackgroundColor3 = Library.BackgroundColor;
+                BorderColor3     = Library.OutlineColor;
+                BorderMode       = Enum.BorderMode.Inset;
+                Position         = UDim2.new(0, 0, 0, ModeSelectInner.Size.Y.Offset + 3);
+                Size             = UDim2.new(1, 0, 0, 18);
+                ZIndex           = 15;
+                Parent           = ModeSelectOuter;
+            })
+            ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 18)
+            Library:AddToRegistry(listInRow, { BackgroundColor3="BackgroundColor"; BorderColor3="OutlineColor" })
+
+            KeyPicker._inList = false
+
+            local listLabel = Library:CreateLabel({
+                Active = false; Size = UDim2.new(1, 0, 0, 15); TextSize = 13;
+                Text = "☐  Show in List"; ZIndex = 16; Parent = listInRow;
+            })
+
+            listInRow.InputBegan:Connect(function(inp)
+                if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+                KeyPicker._inList = not KeyPicker._inList
+                listLabel.Text    = (KeyPicker._inList and "☑" or "☐") .. "  Show in List"
+                ModeSelectOuter.Visible = false
+                -- Rebuild the list frame if it exists
+                if Library._RebuildKeybindList then Library._RebuildKeybindList() end
             end)
         end
 
@@ -3459,6 +3492,8 @@ do
         Instance.new("UICorner", DropdownOuter).CornerRadius = UDim.new(0, 4)
         DropdownInner.BorderSizePixel = 0
         Instance.new("UICorner", DropdownInner).CornerRadius = UDim.new(0, 4)
+        do local s=Instance.new("UIStroke"); s.Color=Library.OutlineColor; s.Thickness=1
+           s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=DropdownOuter end
 
         Library:Create("UIGradient", {
             Color = ColorSequence.new({
@@ -5397,17 +5432,16 @@ do
                     local currScale  = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
                     local currXOff   = currScale * Slider.MaxSize
 
-                    -- Smooth interpolation: alpha scales with distance.
-                    -- Max alpha = 0.35 → far moves take ~10 frames (0.17 s at 60 fps).
-                    -- Min alpha = 0.08 → tiny adjustments take ~55 frames (0.9 s).
-                    -- Snap to target when within 0.5 px to guarantee min/max is reachable.
+                    -- Smooth interpolation: alpha proportional to distance.
+                    -- Max alpha 0.10 → large moves visible over ~0.7 s (42 frames).
+                    -- Min alpha 0.03 → tiny nudges visible over ~2.3 s.
                     local dist     = math.abs(targetXOff - currXOff)
                     local distFrac = dist / math.max(Slider.MaxSize, 1)
                     local smoothXOff
                     if dist < 0.5 then
-                        smoothXOff = targetXOff  -- snap: ensures 0 and Max are always reachable
+                        smoothXOff = targetXOff  -- snap: 0 and Max always reachable
                     else
-                        local alpha  = math.clamp(distFrac * 2.5, 0.08, 0.35)
+                        local alpha  = math.clamp(distFrac * 1.0, 0.03, 0.10)
                         smoothXOff   = currXOff + (targetXOff - currXOff) * alpha
                     end
                     local nXScale    = Library:MapValue(smoothXOff, 0, Slider.MaxSize, 0, 1)
@@ -5842,6 +5876,12 @@ do
             BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
+        DropdownOuter.BorderSizePixel = 0
+        Instance.new("UICorner", DropdownOuter).CornerRadius = UDim.new(0, 4)
+        DropdownInner.BorderSizePixel = 0
+        Instance.new("UICorner", DropdownInner).CornerRadius = UDim.new(0, 4)
+        do local s=Instance.new("UIStroke"); s.Color=Library.OutlineColor; s.Thickness=1
+           s.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; s.Parent=DropdownOuter end
 
         Library:Create("UIGradient", {
             Color = ColorSequence.new({
@@ -11689,6 +11729,18 @@ function Library:ApplySidebarLayout()
     if not Library._origTCPos then Library._origTCPos=TC.Position; Library._origTCSize=TC.Size end
     TC.Position = UDim2.new(0,curW+4,0,4); TC.Size = UDim2.new(1,-(curW+12),1,-12)
 
+    -- Shared helper: hide title-bar home button immediately and after any pending defer
+    local function _hideTitleBarHomeBtn()
+        local _i = Library._Inner
+        if not _i then return end
+        local function _try()
+            local tb = _i:FindFirstChild("_StarlightHomeBtn")
+            if tb then tb.Visible = false end
+        end
+        _try()
+        task.defer(_try)   -- also catch the case where btn is created moments later
+    end
+
     if Library._sidebarFrame then
         -- Re-show: sync frame/line widths with current names-hidden state
         Library._sidebarFrame.Visible = true
@@ -11708,6 +11760,7 @@ function Library:ApplySidebarLayout()
                 entry.iconLabel.Position    = UDim2.new(0,6,0.5,0)
             end
         end
+        _hideTitleBarHomeBtn()   -- hide on re-show
         return
     end
 
@@ -11851,13 +11904,7 @@ function Library:ApplySidebarLayout()
     end)
 
     Library._sidebarFrame=sb
-
-    -- Hide title-bar home button — replaced by the sidebar bottom button
-    local _inner = Library._Inner
-    if _inner then
-        local tb = _inner:FindFirstChild("_StarlightHomeBtn")
-        if tb then tb.Visible = false end
-    end
+    _hideTitleBarHomeBtn()   -- hide on first build too
 end
 
 function Library:RemoveSidebarLayout()
@@ -12308,5 +12355,68 @@ function Library:SetupHomeTab(Window, config)
 
     return tab
 end
+
+-- ── Keybind list (Starlight) ─────────────────────────────────────────────────
+Library._keybindListShowAll = false
+
+function Library:_RebuildKeybindList()
+    local kf = Library.KeybindFrame
+    local kc = Library.KeybindContainer
+    if not kf or not kc then return end
+
+    local vis = 0
+    for _, row in ipairs(kc:GetChildren()) do
+        if not row:IsA("Frame") then continue end
+        local picker = row._picker
+        if not picker then row.Visible = false; continue end
+
+        local active = pcall(function() return picker:GetState() end) and picker:GetState() or false
+        -- "Always" is always active
+        if picker.Mode == "Always" then active = true end
+        local inList = picker._inList or false
+
+        local show = inList and (Library._keybindListShowAll or active)
+        row.Visible = show
+        if show then vis += 1 end
+
+        -- Tint the label AccentColor when active, gray when inactive
+        local lbl = row:FindFirstChildWhichIsA("TextLabel")
+        if lbl then
+            lbl.TextColor3 = active
+                and Color3.fromRGB(161, 169, 225)   -- lavender = active
+                or  Color3.fromRGB(165, 165, 165)   -- gray     = inactive
+        end
+    end
+
+    local rowH = 18
+    kf.Size    = UDim2.new(0, 220, 0, vis * rowH + 26)
+    kf.Visible = (vis > 0) and Library._keybindListVisible ~= false
+end
+
+Library._keybindListVisible = true
+
+-- Periodically refresh active-state colours (every 0.1 s is imperceptible)
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(function() Library:_RebuildKeybindList() end)
+    end
+end)
+
+-- ── Font selector API ─────────────────────────────────────────────────────────
+function Library:ApplyFont(fontName)
+    local ok, font = pcall(function() return Enum.Font[fontName] end)
+    if not ok or not font then return end
+    Library.Font = font
+    -- Update all live text objects
+    for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
+        pcall(function()
+            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                inst.Font = font
+            end
+        end)
+    end
+end
+
 
 return Library
