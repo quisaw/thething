@@ -11632,26 +11632,55 @@ function Library:ApplySidebarLayout()
     local MSI = Library._MSI; local TabArea = Library._TabArea; local TC = Library._TabContainer
     if not (MSI and TabArea and TC) then return end
     TabArea.Visible = false
+
+    -- Use narrow width when tab names are hidden, full width otherwise.
+    local namesHidden = Library._tabNamesVisible == false
+    local curW = namesHidden and _SW_ICON or _SW
+
     if not Library._origTCPos then Library._origTCPos=TC.Position; Library._origTCSize=TC.Size end
-    TC.Position = UDim2.new(0,_SW+4,0,4); TC.Size = UDim2.new(1,-(_SW+12),1,-12)
+    TC.Position = UDim2.new(0,curW+4,0,4); TC.Size = UDim2.new(1,-(curW+12),1,-12)
+
     if Library._sidebarFrame then
+        -- Re-show: sync frame/line widths with current names-hidden state
         Library._sidebarFrame.Visible = true
-        if Library._sidebarLine then Library._sidebarLine.Visible = true end
+        Library._sidebarFrame.Size    = UDim2.new(0,curW,1,0)
+        if Library._sidebarLine then
+            Library._sidebarLine.Visible  = true
+            Library._sidebarLine.Position = UDim2.new(0,curW,0,0)
+        end
+        -- Sync button labels and icon anchors
+        for _,entry in ipairs(Library._sidebarButtons) do
+            entry.nameLabel.Visible = not namesHidden
+            if namesHidden then
+                entry.iconLabel.AnchorPoint = Vector2.new(0.5,0.5)
+                entry.iconLabel.Position    = UDim2.new(0.5,0,0.5,0)
+            else
+                entry.iconLabel.AnchorPoint = Vector2.new(0,0.5)
+                entry.iconLabel.Position    = UDim2.new(0,6,0.5,0)
+            end
+        end
         return
     end
+
+    -- ── Build the sidebar for the first time ──────────────────────────────
     local sb = Instance.new("Frame")
     sb.Name="StarlightSidebar"; sb.BackgroundColor3=Color3.fromRGB(23,25,29)
-    sb.BorderSizePixel=0; sb.Position=UDim2.new(0,0,0,0); sb.Size=UDim2.new(0,_SW,1,0)
+    sb.BorderSizePixel=0; sb.Position=UDim2.new(0,0,0,0); sb.Size=UDim2.new(0,curW,1,0)
     sb.ZIndex=10; sb.Parent=MSI
     Instance.new("UICorner",sb).CornerRadius=UDim.new(0,4)
     local line=Instance.new("Frame"); line.BackgroundColor3=Color3.fromRGB(44,47,54)
-    line.BorderSizePixel=0; line.Position=UDim2.new(0,_SW,0,0); line.Size=UDim2.new(0,1,1,0)
+    line.BorderSizePixel=0; line.Position=UDim2.new(0,curW,0,0); line.Size=UDim2.new(0,1,1,0)
     line.ZIndex=10; line.Parent=MSI; Library._sidebarLine=line
+
+    -- Reserve 44 px at the bottom for the home-tab icon button
     local ll=Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.HorizontalAlignment=Enum.HorizontalAlignment.Center; ll.VerticalAlignment=Enum.VerticalAlignment.Top
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,4); ll.Parent=sb
     local pad=Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0,8)
-    pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6); pad.PaddingBottom=UDim.new(0,8); pad.Parent=sb
+    pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6)
+    pad.PaddingBottom=UDim.new(0,44)  -- room for the home button at the bottom
+    pad.Parent=sb
+
     Library._sidebarButtons={}
     local function SetActive(e,a)
         e.button.BackgroundTransparency=a and 0 or 0.4
@@ -11667,14 +11696,16 @@ function Library:ApplySidebarLayout()
         btn.Text=""; btn.AutoButtonColor=false; btn.LayoutOrder=i; btn.ZIndex=12; btn.Parent=sb
         Instance.new("UICorner",btn).CornerRadius=UDim.new(0,5)
         local ico=Instance.new("ImageLabel"); ico.BackgroundTransparency=1
-        ico.AnchorPoint=Vector2.new(0,0.5); ico.Position=UDim2.new(0,6,0.5,0)
+        -- Icon position: centred when names are hidden, left-aligned otherwise
+        ico.AnchorPoint = namesHidden and Vector2.new(0.5,0.5) or Vector2.new(0,0.5)
+        ico.Position    = namesHidden and UDim2.new(0.5,0,0.5,0) or UDim2.new(0,6,0.5,0)
         ico.Size=UDim2.fromOffset(16,16); ico.ImageColor3=Color3.fromRGB(100,103,130)
         ico.ZIndex=13; ico.Visible=showIcon; ico.Image=iconId or ""; ico.Parent=btn
         local nm=Instance.new("TextLabel"); nm.BackgroundTransparency=1
         nm.Font=Enum.Font.Gotham; nm.TextColor3=Color3.fromRGB(165,165,165)
         nm.TextSize=13; nm.TextXAlignment=Enum.TextXAlignment.Left
         nm.TextTruncate=Enum.TextTruncate.AtEnd; nm.ZIndex=13; nm.Text=d.name
-        nm.AnchorPoint=Vector2.new(0,0.5)
+        nm.AnchorPoint=Vector2.new(0,0.5); nm.Visible = not namesHidden
         nm.Position=showIcon and UDim2.new(0,28,0.5,0) or UDim2.new(0,10,0.5,0)
         nm.Size=showIcon and UDim2.new(1,-34,1,0) or UDim2.new(1,-16,1,0); nm.Parent=btn
         local entry={button=btn,iconLabel=ico,nameLabel=nm,tab=d.tab}
@@ -11687,6 +11718,39 @@ function Library:ApplySidebarLayout()
         btn.MouseLeave:Connect(function() if btn.BackgroundTransparency>0 then btn.BackgroundTransparency=0.4 end end)
     end
     if Library._sidebarButtons[1] then SetActive(Library._sidebarButtons[1],true) end
+
+    -- ── Home button pinned at bottom-left of sidebar ───────────────────────
+    -- Thin divider above the home button
+    local homeDiv = Instance.new("Frame")
+    homeDiv.BackgroundColor3=Color3.fromRGB(44,47,54); homeDiv.BorderSizePixel=0
+    homeDiv.Size=UDim2.new(1,-12,0,1); homeDiv.Position=UDim2.new(0,6,1,-40)
+    homeDiv.ZIndex=11; homeDiv.Parent=sb
+
+    local homeBtnSz = 28   -- slightly larger than the title-bar variant
+    task.defer(function()
+        local icon = Library:GetIcon("app-window-mac")
+        if not icon then return end
+        for _,d in ipairs(Library._orderedTabs) do
+            if not Library._hiddenTabs[d.tab] then continue end
+            local hBtn = Instance.new("ImageButton")
+            hBtn.Name="SidebarHomeBtn"; hBtn.BackgroundColor3=Library.BackgroundColor
+            hBtn.BackgroundTransparency=0; hBtn.BorderSizePixel=0; hBtn.AutoButtonColor=false
+            hBtn.AnchorPoint=Vector2.new(0.5,1)
+            hBtn.Position=UDim2.new(0.5,0,1,-6)   -- centred at the bottom, 6 px gap
+            hBtn.Size=UDim2.fromOffset(homeBtnSz,homeBtnSz)
+            hBtn.Image=icon.Url; hBtn.ImageRectOffset=icon.ImageRectOffset
+            hBtn.ImageRectSize=icon.ImageRectSize; hBtn.ImageColor3=Color3.fromRGB(161,169,225)
+            hBtn.ZIndex=12; hBtn.Parent=sb
+            Instance.new("UICorner",hBtn).CornerRadius=UDim.new(0,4)
+            local hStroke=Instance.new("UIStroke"); hStroke.Color=Library.OutlineColor
+            hStroke.Thickness=1; hStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; hStroke.Parent=hBtn
+            hBtn.MouseButton1Click:Connect(function() pcall(function() d.tab:ShowTab() end) end)
+            hBtn.MouseEnter:Connect(function() hBtn.ImageColor3=Color3.fromRGB(255,255,255) end)
+            hBtn.MouseLeave:Connect(function() hBtn.ImageColor3=Color3.fromRGB(161,169,225) end)
+            break  -- only the first hidden tab gets a button
+        end
+    end)
+
     Library._sidebarFrame=sb
 end
 
@@ -11759,8 +11823,11 @@ function Library:ShowLoadingScreen(config)
         return lbl
     end
 
-    mkLabel(msg, 18, 0)
-    if submsg ~= "" then mkLabel(submsg, 13, 0.3) end
+    -- Start fully transparent; fade in over 0.5 s
+    scr.BackgroundTransparency = 1
+
+    local mainLbl = mkLabel(msg, 18, 1)       -- start invisible
+    local subLbl  = submsg ~= "" and mkLabel(submsg, 13, 1) or nil
 
     local dotRow = Instance.new("Frame")
     dotRow.BackgroundTransparency = 1
@@ -11774,19 +11841,35 @@ function Library:ShowLoadingScreen(config)
     local dots = {}
     for i = 1, 3 do
         local d = Instance.new("Frame")
-        d.BackgroundColor3 = Color3.fromRGB(161,169,225); d.BorderSizePixel = 0
+        d.BackgroundColor3       = Color3.fromRGB(161,169,225)
+        d.BackgroundTransparency = 1   -- hidden until fade-in completes
+        d.BorderSizePixel        = 0
         d.Size = UDim2.fromOffset(6, 6); d.ZIndex = 9999; d.Parent = dotRow
         Instance.new("UICorner", d).CornerRadius = UDim.new(0.5, 0)
         dots[i] = d
     end
-    local dotIdx = 0
-    local dotConn
-    dotConn = RunService.Heartbeat:Connect(function()
-        if not scr.Parent then pcall(function() dotConn:Disconnect() end); return end
-        dotIdx = (dotIdx + 1) % 30
-        for i, d in ipairs(dots) do
-            d.BackgroundTransparency = 1 - math.abs(math.sin(((dotIdx + (i-1)*10) % 30) / 30 * math.pi))
-        end
+
+    -- Fade in everything together
+    task.spawn(function()
+        task.wait()
+        local tInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        TweenService:Create(scr,     tInfo, {BackgroundTransparency = 0.08}):Play()
+        TweenService:Create(mainLbl, tInfo, {TextTransparency = 0}):Play()
+        if subLbl then TweenService:Create(subLbl, tInfo, {TextTransparency = 0.25}):Play() end
+
+        -- Start dot animation only after the fade finishes
+        task.wait(0.5)
+        local dotIdx  = 0
+        -- Cycle of 90 frames ≈ 1.5 s at 60 fps; phase offset = 30 per dot (1/3 of cycle)
+        local dotConn
+        dotConn = RunService.Heartbeat:Connect(function()
+            if not scr.Parent then pcall(function() dotConn:Disconnect() end); return end
+            dotIdx = (dotIdx + 1) % 90
+            for i, d in ipairs(dots) do
+                d.BackgroundTransparency = 1 - math.abs(
+                    math.sin(((dotIdx + (i-1)*30) % 90) / 90 * math.pi))
+            end
+        end)
     end)
 
     Library._loadingScreen = scr
@@ -11794,17 +11877,25 @@ function Library:ShowLoadingScreen(config)
 end
 
 function Library:HideLoadingScreen()
-    if Library._loadingScreen then
-        TweenService:Create(Library._loadingScreen,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-            { BackgroundTransparency = 1 }):Play()
-        task.delay(0.35, function()
-            if Library._loadingScreen then
-                Library._loadingScreen:Destroy()
-                Library._loadingScreen = nil
+    if not Library._loadingScreen then return end
+    local scr    = Library._loadingScreen
+    local tInfo  = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    TweenService:Create(scr, tInfo, {BackgroundTransparency = 1}):Play()
+    for _, child in ipairs(scr:GetDescendants()) do
+        pcall(function()
+            if child:IsA("TextLabel") then
+                TweenService:Create(child, tInfo, {TextTransparency = 1}):Play()
+            elseif child:IsA("Frame") then
+                TweenService:Create(child, tInfo, {BackgroundTransparency = 1}):Play()
             end
         end)
     end
+    task.delay(0.55, function()
+        if Library._loadingScreen then
+            Library._loadingScreen:Destroy()
+            Library._loadingScreen = nil
+        end
+    end)
 end
 
 -- ── Home tab ──────────────────────────────────────────────────────────────────
@@ -11989,7 +12080,7 @@ function Library:SetupHomeTab(Window, config)
 
         -- Square tab-styled button: same background as tab buttons, with UICorner + UIStroke.
         -- Size matches the tab button height so it sits flush in the header strip.
-        local TAB_SZ = 22
+        local TAB_SZ = 28   -- 3 px extra padding on each side vs previous 22
         local hh     = Library._headerHeight or 25
         local btn    = Instance.new("ImageButton")
         btn.Name                   = "_StarlightHomeBtn"
