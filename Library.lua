@@ -11091,7 +11091,8 @@ end
     Library._MSI          = MainSectionInner
     Library._TabArea      = TabArea
     Library._TabContainer = TabContainer
-    Library._Inner        = Inner   -- needed for home tab title-bar button
+    Library._Inner        = Inner         -- needed for home tab title-bar button
+    Library._headerHeight = headerHeight  -- used to vertically centre the title-bar button
 
     Library._orderedTabs    = {}
     Library._sidebarButtons = {}
@@ -11618,22 +11619,286 @@ function Library:RemoveSidebarLayout()
 end
 
 -- ── Executor detection ────────────────────────────────────────────────────────
+-- Uses identifyexecutor() from the sUNC standard (supported by most modern executors).
+-- Returns (name: string, version: string).
 function Library:_DetectExecutor()
-    if getexecutorname then
-        local ok, name = pcall(getexecutorname)
-        if ok and name and name ~= "" then return name end
+    if identifyexecutor then
+        local ok, name, version = pcall(identifyexecutor)
+        if ok and name and name ~= "" then
+            return name, version or ""
+        end
     end
-    if syn and syn.request         then return "Synapse X" end
-    if KRNL_LOADED                 then return "KRNL"       end
-    if typeof(fluxus) ~= "nil"     then return "Fluxus"     end
-    if isfolder                    then return "Unknown"     end
-    return "Unknown"
+    -- Legacy fallbacks for older executors
+    if typeof(getsynasset) ~= "nil"  then return "Synapse X",  "" end
+    if syn and syn.request            then return "Synapse X",  "" end
+    if KRNL_LOADED                    then return "KRNL",       "" end
+    if typeof(fluxus) ~= "nil"        then return "Fluxus",     "" end
+    return "Unknown", ""
 end
 
 -- ── Loading screen ────────────────────────────────────────────────────────────
 -- Shows a full-window overlay with a configurable loading message.
 -- Call Library:HideLoadingScreen() when your script has finished loading.
 function Library:ShowLoadingScreen(config)
+    config = config or {}
+    local msg    = config.Message    or "Loading..."
+    local submsg = config.SubMessage or ""
+    local holder = Library.Window and Library.Window.Holder
+    if not holder then return end
+
+    local scr = Instance.new("Frame")
+    scr.Name             = "_StarlightLoading"
+    scr.BackgroundColor3 = Color3.fromRGB(20, 21, 25)
+    scr.BorderSizePixel  = 0
+    scr.Size             = UDim2.fromScale(1, 1)
+    scr.ZIndex           = 9998
+    scr.Parent           = holder
+    Instance.new("UICorner", scr).CornerRadius = UDim.new(0, 8)
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection       = Enum.FillDirection.Vertical
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment   = Enum.VerticalAlignment.Center
+    layout.Padding             = UDim.new(0, 8)
+    layout.Parent              = scr
+
+    local function mkLabel(text, size, alpha)
+        local lbl = Instance.new("TextLabel")
+        lbl.BackgroundTransparency = 1
+        lbl.Font             = Enum.Font.GothamBold
+        lbl.Text             = text
+        lbl.TextSize         = size
+        lbl.TextColor3       = Color3.fromRGB(255, 255, 255)
+        lbl.TextTransparency = alpha or 0
+        lbl.AutomaticSize    = Enum.AutomaticSize.XY
+        lbl.ZIndex           = 9999
+        lbl.Parent           = scr
+        return lbl
+    end
+
+    mkLabel(msg, 18, 0)
+    if submsg ~= "" then mkLabel(submsg, 13, 0.3) end
+
+    local dotRow = Instance.new("Frame")
+    dotRow.BackgroundTransparency = 1
+    dotRow.AutomaticSize = Enum.AutomaticSize.XY
+    dotRow.ZIndex = 9999; dotRow.Parent = scr
+    local dotLayout = Instance.new("UIListLayout")
+    dotLayout.FillDirection       = Enum.FillDirection.Horizontal
+    dotLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    dotLayout.VerticalAlignment   = Enum.VerticalAlignment.Center
+    dotLayout.Padding = UDim.new(0, 6); dotLayout.Parent = dotRow
+    local dots = {}
+    for i = 1, 3 do
+        local d = Instance.new("Frame")
+        d.BackgroundColor3 = Color3.fromRGB(161,169,225); d.BorderSizePixel = 0
+        d.Size = UDim2.fromOffset(6, 6); d.ZIndex = 9999; d.Parent = dotRow
+        Instance.new("UICorner", d).CornerRadius = UDim.new(0.5, 0)
+        dots[i] = d
+    end
+    local dotIdx = 0
+    local dotConn
+    dotConn = RunService.Heartbeat:Connect(function()
+        if not scr.Parent then pcall(function() dotConn:Disconnect() end); return end
+        dotIdx = (dotIdx + 1) % 30
+        for i, d in ipairs(dots) do
+            d.BackgroundTransparency = 1 - math.abs(math.sin(((dotIdx + (i-1)*10) % 30) / 30 * math.pi))
+        end
+    end)
+
+    Library._loadingScreen = scr
+    return scr
+end
+
+function Library:HideLoadingScreen()
+    if Library._loadingScreen then
+        TweenService:Create(Library._loadingScreen,
+            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { BackgroundTransparency = 1 }):Play()
+        task.delay(0.35, function()
+            if Library._loadingScreen then
+                Library._loadingScreen:Destroy()
+                Library._loadingScreen = nil
+            end
+        end)
+    end
+end
+
+-- ── Home tab ──────────────────────────────────────────────────────────────────
+-- config = {
+--   TabName  = "Home",
+--   Changelog = { {Version="v1", Date="DD.MM.YY", Notes="..."}, ... },
+--   Executors = {
+--     Supported   = { "Synapse Z", "Xeno", ... },
+--     Partial     = { {Name="Fluxus", NotifTitle="...", NotifBody="..."}, ... },
+--     Unsupported = { {Name="Delta",  NotifTitle="...", NotifBody="..."}, ... },
+--   },
+--   DefaultUnsupTitle = "...",  -- shown for unlisted executors
+--   DefaultUnsupBody  = "...",
+-- }
+function Library:SetupHomeTab(Window, config)
+    config = config or {}
+    local tabName   = config.TabName  or "Home"
+    local changelog = config.Changelog or {}
+    local execs     = config.Executors or {}
+
+    local supported   = execs.Supported   or {}
+    local partial     = execs.Partial     or {}
+    local unsupported = execs.Unsupported or {}
+
+    local execName, execVersion = Library:_DetectExecutor()
+
+    local function norm(s) return string.lower(s or "") end
+    local function isSupported(n)
+        for _, v in ipairs(supported) do if norm(v) == norm(n) then return true end end
+    end
+    local function getPartial(n)
+        for _, v in ipairs(partial) do if norm(v.Name) == norm(n) then return v end end
+    end
+    local function getUnsupported(n)
+        for _, v in ipairs(unsupported) do if norm(v.Name) == norm(n) then return v end end
+    end
+
+    local execSup   = isSupported(execName)
+    local execPart  = getPartial(execName)
+    local execUnsup = getUnsupported(execName)
+
+    local dotCol, dotChar, statusText
+    if execSup then
+        dotCol = "rgb(80,200,120)"; dotChar = "●"; statusText = "Fully Supported"
+    elseif execPart then
+        dotCol = "rgb(255,180,50)"; dotChar = "▲"; statusText = "Partially Supported"
+    else
+        dotCol = "rgb(220,80,80)"; dotChar = "✕"; statusText = "Unsupported"
+    end
+
+    local tab = Window:AddTab(tabName)
+
+    -- ── Left column: Overview ─────────────────────────────────────────────
+    local leftBox = tab:AddLeftGroupbox("Overview")
+
+    local _players    = cloneref(game:GetService("Players"))
+    local _lp         = _players.LocalPlayer or _players.PlayerAdded:Wait()
+    local displayName = _lp.DisplayName or _lp.Name
+    local userName    = _lp.Name
+
+    -- NOTE: AddLabel(text, doesWrap) — do NOT pass a table as 2nd arg,
+    -- that form treats arg1 as the index key and reads Text from the table.
+    leftBox:AddLabel("<b>Welcome,  " .. displayName .. "!</b>", false)
+    leftBox:AddLabel('<font color="rgb(165,165,165)">@' .. userName .. "</font>", false)
+    leftBox:AddDivider()
+
+    local gameName = "Unknown Game"
+    pcall(function()
+        gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or gameName
+    end)
+    leftBox:AddLabel("Game:  " .. gameName, true)
+    leftBox:AddDivider()
+
+    local verStr = (execVersion and execVersion ~= "") and ("  v" .. execVersion) or ""
+    leftBox:AddLabel(
+        string.format('<font color="%s">%s</font>  <b>%s</b>%s', dotCol, dotChar, execName, verStr),
+        false)
+    leftBox:AddLabel(
+        string.format('<font color="%s">%s</font>', dotCol, statusText),
+        false)
+
+    -- ── Left column: Changelog (stacked below Overview) ───────────────────
+    local clBox = tab:AddLeftGroupbox("Changelog")
+    if #changelog > 0 then
+        for i, entry in ipairs(changelog) do
+            local ver   = entry.Version or entry.version or ""
+            local date  = entry.Date    or entry.date    or ""
+            local notes = entry.Notes   or entry.notes   or ""
+            local header = ""
+            if ver ~= "" and date ~= "" then
+                header = string.format('<b>%s</b>  <font color="rgb(165,165,165)">%s</font>', ver, date)
+            elseif ver ~= "" then header = "<b>" .. ver .. "</b>"
+            elseif date ~= "" then header = date end
+            if header ~= "" then clBox:AddLabel(header, false) end
+            if notes  ~= "" then clBox:AddLabel(notes,  true)  end
+            if i < #changelog then clBox:AddDivider({ Margin = 3 }) end
+        end
+    else
+        clBox:AddLabel("No changelog entries.", false)
+    end
+
+    -- ── Right column: live clock & date ───────────────────────────────────
+    local rightBox = tab:AddRightGroupbox("Info")
+
+    local timeLabel = rightBox:AddLabel("00 : 00 : 00", false)
+    local dateLabel = rightBox:AddLabel("00 / 00 / 00", false)
+
+    local function updateClock()
+        local now = os.date("*t")
+        timeLabel:SetText(string.format("%02d : %02d : %02d", now.hour, now.min, now.sec))
+        dateLabel:SetText(string.format("%02d / %02d / %02d", now.month, now.day, now.year % 100))
+    end
+    updateClock()
+    task.spawn(function() while task.wait(1) do pcall(updateClock) end end)
+
+    -- ── Auto-show + title-bar button ──────────────────────────────────────
+    task.defer(function()
+        task.wait()
+        pcall(function() tab:ShowTab() end)
+
+        local Inner = Library._Inner
+        if not Inner or Inner:FindFirstChild("_StarlightHomeBtn") then return end
+
+        local icon = Library:GetIcon("app-window-mac")
+        if not icon then return end
+
+        -- Centre the button vertically inside the header strip.
+        -- headerHeight is stored by CreateWindow (default 25 for a title-only window).
+        local hh  = Library._headerHeight or 25
+        local btn = Instance.new("ImageButton")
+        btn.Name                   = "_StarlightHomeBtn"
+        btn.BackgroundTransparency = 1
+        btn.AnchorPoint            = Vector2.new(1, 0.5)
+        -- X: flush to the right edge of Inner, leaving a small gap.
+        -- Y: horizontally centred in the header strip.
+        btn.Position               = UDim2.new(1, -8, 0, math.floor(hh / 2))
+        btn.Size                   = UDim2.fromOffset(18, 18)
+        btn.Image                  = icon.Url
+        btn.ImageRectOffset        = icon.ImageRectOffset
+        btn.ImageRectSize          = icon.ImageRectSize
+        btn.ImageColor3            = Color3.fromRGB(161, 169, 225)
+        btn.ZIndex                 = 20
+        btn.Parent                 = Inner
+        btn.MouseButton1Click:Connect(function() pcall(function() tab:ShowTab() end) end)
+        btn.MouseEnter:Connect(function() btn.ImageColor3 = Color3.fromRGB(255,255,255) end)
+        btn.MouseLeave:Connect(function() btn.ImageColor3 = Color3.fromRGB(161,169,225) end)
+    end)
+
+    -- ── Executor notifications ─────────────────────────────────────────────
+    local function showExecNotif(title, body, duration)
+        task.delay(0.6, function()
+            Library:Notify({ Title = title, Description = body, Time = duration })
+        end)
+    end
+
+    if execPart then
+        local e = execPart
+        showExecNotif(
+            e.NotifTitle or "Partial Support",
+            e.NotifBody  or (execName .. " has partial support. Some features may not work."),
+            5)
+    elseif execUnsup then
+        local e = execUnsup
+        showExecNotif(
+            e.NotifTitle or "Unsupported Executor",
+            e.NotifBody  or (execName .. " is not supported."),
+            8)
+    elseif not execSup and execName ~= "Unknown" then
+        showExecNotif(
+            config.DefaultUnsupTitle or "Unsupported Executor",
+            config.DefaultUnsupBody  or (execName .. " is not officially supported."),
+            6)
+    end
+
+    return tab
+end
+
     config = config or {}
     local msg    = config.Message    or "Loading..."
     local submsg = config.SubMessage or ""
@@ -11735,190 +12000,6 @@ end
 --     Partial     = { {Name="Fluxus", NotifTitle="...", NotifBody="..."} },
 --     Unsupported = { {Name="Delta",  NotifTitle="...", NotifBody="..."} },
 --   },
--- }
-function Library:SetupHomeTab(Window, config)
-    config = config or {}
-    local tabName   = config.TabName  or "Home"
-    local changelog = config.Changelog or {}
-    local execs     = config.Executors or {}
-
-    local supported   = execs.Supported   or {}
-    local partial     = execs.Partial     or {}
-    local unsupported = execs.Unsupported or {}
-
-    local execName = Library:_DetectExecutor()
-
-    -- Check executor support
-    local function isSupported(name)
-        for _, n in ipairs(supported) do
-            if string.lower(n) == string.lower(name) then return true end
-        end
-        return false
-    end
-    local function getPartial(name)
-        for _, e in ipairs(partial) do
-            if string.lower(e.Name or "") == string.lower(name) then return e end
-        end
-        return nil
-    end
-    local function getUnsupported(name)
-        for _, e in ipairs(unsupported) do
-            if string.lower(e.Name or "") == string.lower(name) then return e end
-        end
-        return nil
-    end
-
-    local tab = Window:AddTab(tabName)
-
-    -- Left side: Welcome + Game + Executor
-    local leftBox = tab:AddLeftGroupbox("Overview")
-
-    -- Username and display name
-    local Players = cloneref(game:GetService("Players"))
-    local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
-    local displayName = LocalPlayer.DisplayName or LocalPlayer.Name
-    local userName    = LocalPlayer.Name
-
-    leftBox:AddLabel(string.format("<b>%s</b>", displayName), { DoesWrap = false })
-    leftBox:AddLabel("@" .. userName, { DoesWrap = false })
-    leftBox:AddDivider()
-
-    -- Game info
-    local gamePlace  = game:GetService("MarketplaceService")
-    local gameName   = "Unknown Game"
-    pcall(function()
-        local info = gamePlace:GetProductInfo(game.PlaceId)
-        gameName = info.Name or gameName
-    end)
-    leftBox:AddLabel("Game: " .. gameName, { DoesWrap = true })
-    leftBox:AddDivider()
-
-    -- Executor info with status indicator
-    local execSup   = isSupported(execName)
-    local execPart  = getPartial(execName)
-    local execUnsup = getUnsupported(execName)
-
-    local statusIcon, statusColor
-    if execSup then
-        statusIcon = "●"; statusColor = "rgb(80, 200, 120)"
-    elseif execPart then
-        statusIcon = "▲"; statusColor = "rgb(255, 180, 50)"
-    else
-        statusIcon = "✕"; statusColor = "rgb(220, 80, 80)"
-    end
-
-    leftBox:AddLabel(
-        string.format('<font color="%s">%s</font>  %s', statusColor, statusIcon, execName),
-        { DoesWrap = false }
-    )
-
-    local supportLabel
-    if execSup then
-        supportLabel = '<font color="rgb(80,200,120)">Fully Supported</font>'
-    elseif execPart then
-        supportLabel = '<font color="rgb(255,180,50)">Partially Supported</font>'
-    else
-        supportLabel = '<font color="rgb(220,80,80)">Unsupported</font>'
-    end
-    leftBox:AddLabel(supportLabel, { DoesWrap = false })
-
-    -- Right side: Time/Date + Changelog
-    local rightBox = tab:AddRightGroupbox("Changelog")
-
-    -- Time & date (live-updating)
-    local timeLabel = rightBox:AddLabel("", { DoesWrap = false })
-    local dateLabel = rightBox:AddLabel("", { DoesWrap = false })
-    rightBox:AddDivider()
-
-    local function updateClock()
-        local now = os.date("*t")
-        timeLabel:SetText(string.format("%02d : %02d : %02d", now.hour, now.min, now.sec))
-        dateLabel:SetText(string.format("%02d / %02d / %02d", now.month, now.day, now.year % 100))
-    end
-    updateClock()
-    task.spawn(function()
-        while true do task.wait(1); pcall(updateClock) end
-    end)
-
-    -- Changelog entries
-    if #changelog > 0 then
-        for _, entry in ipairs(changelog) do
-            local ver   = entry.Version or entry.version or ""
-            local date  = entry.Date    or entry.date    or ""
-            local notes = entry.Notes   or entry.notes   or ""
-            if ver ~= "" or date ~= "" then
-                rightBox:AddLabel(string.format('<b>%s</b>  <font color="rgb(165,165,165)">%s</font>', ver, date), { DoesWrap = false })
-            end
-            if notes ~= "" then
-                rightBox:AddLabel(notes, { DoesWrap = true })
-            end
-            rightBox:AddDivider({ Margin = 4 })
-        end
-    else
-        rightBox:AddLabel("No changelog entries.", { DoesWrap = false })
-    end
-
-    -- Auto-show this tab
-    task.defer(function()
-        task.wait()
-        pcall(function() tab:ShowTab() end)
-    end)
-
-    -- Add title-bar access button (app-window-mac icon)
-    task.defer(function()
-        task.wait()
-        local Inner = Library._Inner
-        if not Inner then return end
-        local icon = Library:GetIcon("app-window-mac")
-        if not icon then return end
-
-        local homeBtn = Instance.new("ImageButton")
-        homeBtn.Name                   = "_StarlightHomeBtn"
-        homeBtn.BackgroundTransparency = 1
-        homeBtn.AnchorPoint            = Vector2.new(1, 0.5)
-        homeBtn.Position               = UDim2.new(1, -8, 0.5, 0)
-        homeBtn.Size                   = UDim2.fromOffset(18, 18)
-        homeBtn.Image                  = icon.Url
-        homeBtn.ImageRectOffset        = icon.ImageRectOffset
-        homeBtn.ImageRectSize          = icon.ImageRectSize
-        homeBtn.ImageColor3            = Color3.fromRGB(161, 169, 225)
-        homeBtn.ZIndex                 = 20
-        homeBtn.Parent                 = Inner
-
-        homeBtn.MouseButton1Click:Connect(function()
-            pcall(function() tab:ShowTab() end)
-        end)
-        homeBtn.MouseEnter:Connect(function()
-            homeBtn.ImageColor3 = Color3.fromRGB(255, 255, 255)
-        end)
-        homeBtn.MouseLeave:Connect(function()
-            homeBtn.ImageColor3 = Color3.fromRGB(161, 169, 225)
-        end)
-    end)
-
-    -- Executor warnings
-    if execPart then
-        task.delay(0.5, function()
-            local e = execPart
-            Library:Notify({
-                Title       = e.NotifTitle or "Partial Support",
-                Description = e.NotifBody  or (execName .. " has partial support. Some features may not work."),
-                Time        = 5,
-            })
-        end)
-    elseif execUnsup then
-        task.delay(0.5, function()
-            local e = execUnsup
-            Library:Notify({
-                Title       = e.NotifTitle or "Unsupported Executor",
-                Description = e.NotifBody  or (execName .. " is not supported."),
-                Time        = 8,
-            })
-        end)
-    end
-
-    return tab
-end
 
 
 return Library
