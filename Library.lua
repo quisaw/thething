@@ -609,9 +609,9 @@ local _tabAnimTweens = {}  -- [frame] = active tween, cancelled before each new 
 function Library:_PlayTabAnimation(frame)
     if not (frame and frame.Parent) then return end
 
-    local anim = Library.TabSwitchAnimation
-    local t    = typeof(Library.TabSwitchAnimationTime) == "number" and Library.TabSwitchAnimationTime or 0.18
-    if anim == "None" or not anim then return end
+    local anim = Library.TabSwitchAnimation or "Fade"  -- default fade
+    local t    = typeof(Library.TabSwitchAnimationTime) == "number" and Library.TabSwitchAnimationTime or 0.25
+    if anim == "None" then return end
 
     t = math.clamp(t, 0.01, 2)
 
@@ -5247,6 +5247,8 @@ do
             BackgroundColor3 = "AccentColor";
             BorderColor3 = "AccentColorDark";
         })
+        Fill.BorderSizePixel = 0
+        Instance.new("UICorner", Fill).CornerRadius = UDim.new(0, 4)
 
         local HideBorderRight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
@@ -5644,6 +5646,8 @@ do
                 Parent           = SubSliderInner;
             })
             Library:AddToRegistry(SubFill, { BackgroundColor3 = "AccentColor"; BorderColor3 = "AccentColorDark" })
+            SubFill.BorderSizePixel = 0
+            Instance.new("UICorner", SubFill).CornerRadius = UDim.new(0, 4)
 
             local SubHideBorderRight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
@@ -9413,7 +9417,38 @@ end
             Blocker.BackgroundTransparency = 0
             TabButton.BackgroundColor3 = Library.MainColor
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = "MainColor"
-            TabHighlight.Visible = true
+            TabHighlight.Visible = false  -- shared sliding indicator replaces per-tab highlight
+
+            -- Slide shared indicator to this tab button (skipped in sidebar mode)
+            pcall(function()
+                local ta = Library._TabArea
+                if not (ta and ta.Visible) then return end
+                -- Create shared indicator on first use
+                if not Library._tabIndicator then
+                    local ind = Instance.new("Frame")
+                    ind.BackgroundColor3 = Library.AccentColor
+                    ind.BorderSizePixel  = 0
+                    ind.Size             = UDim2.fromOffset(10, 2)
+                    ind.ZIndex           = 6
+                    ind.Parent           = ta
+                    Library:AddToRegistry(ind, { BackgroundColor3 = "AccentColor" })
+                    Library._tabIndicator = ind
+                end
+                local ind = Library._tabIndicator
+                local taAbs  = ta.AbsolutePosition
+                local btnPos = TabButton.AbsolutePosition
+                local btnSz  = TabButton.AbsoluteSize
+                if btnSz.X == 0 then return end  -- not laid out yet
+                local targetPos  = UDim2.fromOffset(btnPos.X - taAbs.X, btnPos.Y - taAbs.Y + btnSz.Y - 2)
+                local targetSize = UDim2.fromOffset(btnSz.X, 2)
+                if not ind.Visible then
+                    ind.Position = targetPos; ind.Size = targetSize; ind.Visible = true
+                else
+                    TweenService:Create(ind, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                        { Position = targetPos, Size = targetSize }):Play()
+                end
+            end)
+
             TabFrame.Visible = true
             Library:_PlayTabAnimation(TabFrame)
 
@@ -10035,9 +10070,39 @@ end
                 Library.ActiveSubTab = SubName
                 _deactivateAllSubBtns()
                 SubBtnBlocker.BackgroundTransparency = 0
-                SubBtnHighlight.Visible = true
-                SubBtnInner.BackgroundColor3 = Library.MainColor
-                Library.RegistryMap[SubBtnInner].Properties.BackgroundColor3 = "MainColor"
+                SubBtnHighlight.Visible = false  -- shared indicator replaces per-subtab highlight
+
+                -- Slide per-tab sub-indicator to this sub-tab button
+                pcall(function()
+                    local subBar = SubBtn.Parent  -- the sub-tab button container
+                    if not subBar then return end
+                    local key = tostring(Tab) .. "_subind"
+                    if not Library._subTabIndicators then Library._subTabIndicators = {} end
+                    if not Library._subTabIndicators[key] then
+                        local si = Instance.new("Frame")
+                        si.BackgroundColor3 = Library.AccentColor
+                        si.BorderSizePixel  = 0
+                        si.Size             = UDim2.fromOffset(10, 2)
+                        si.ZIndex           = 10
+                        si.Parent           = subBar
+                        Library:AddToRegistry(si, { BackgroundColor3 = "AccentColor" })
+                        Library._subTabIndicators[key] = si
+                    end
+                    local si     = Library._subTabIndicators[key]
+                    local barAbs = subBar.AbsolutePosition
+                    local btnPos = SubBtn.AbsolutePosition
+                    local btnSz  = SubBtn.AbsoluteSize
+                    if btnSz.X == 0 then return end
+                    local tPos = UDim2.fromOffset(btnPos.X - barAbs.X, btnPos.Y - barAbs.Y + btnSz.Y - 2)
+                    local tSz  = UDim2.fromOffset(btnSz.X, 2)
+                    if not si.Visible then
+                        si.Position = tPos; si.Size = tSz; si.Visible = true
+                    else
+                        TweenService:Create(si, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            { Position = tPos, Size = tSz }):Play()
+                    end
+                end)
+
                 SubTabFrame.Visible = true
                 Library:_PlayTabAnimation(SubTabFrame)
                 Tab._SubTabContent.Visible = true
@@ -12433,6 +12498,9 @@ end
 -- ── Keybind list (Starlight) ─────────────────────────────────────────────────
 Library._keybindListShowAll = false
 
+-- Per-picker active-state cache (avoids re-tweening unchanged rows)
+Library._pickerActiveCache = {}
+
 function Library:_RebuildKeybindList()
     local kf = Library.KeybindFrame
     local kc = Library.KeybindContainer
@@ -12444,29 +12512,65 @@ function Library:_RebuildKeybindList()
         local picker = Library._pickerMap[row]
         if not picker then row.Visible = false; continue end
 
-        local active = pcall(function() return picker:GetState() end) and picker:GetState() or false
-        -- "Always" is always active
-        if picker.Mode == "Always" then active = true end
+        local ok, st = pcall(function() return picker:GetState() end)
+        local active = (ok and st) or picker.Mode == "Always" or false
         local inList = picker._inList or false
-
-        local show = inList and (Library._keybindListShowAll or active)
-        row.Visible = show
+        local show   = inList and (Library._keybindListShowAll or active)
+        row.Visible  = show
         if show then vis += 1 end
 
-        -- Tint the label AccentColor when active, gray when inactive
+        -- Tween text color only when state changes (0.3 s)
         local lbl = row:FindFirstChildWhichIsA("TextLabel")
         if lbl then
-            lbl.TextColor3 = active
-                and Color3.fromRGB(161, 169, 225)   -- lavender = active
-                or  Color3.fromRGB(165, 165, 165)   -- gray     = inactive
+            local prev = Library._pickerActiveCache[picker]
+            if prev ~= active then
+                Library._pickerActiveCache[picker] = active
+                local col = active and Color3.fromRGB(161,169,225) or Color3.fromRGB(165,165,165)
+                TweenService:Create(lbl, TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+                    { TextColor3 = col }):Play()
+            end
         end
     end
 
-    local rowH = 18
-    kf.Size    = UDim2.new(0, 220, 0, vis * rowH + 26)
-    kf.Visible = (vis > 0) and Library._keybindListVisible ~= false
+    local rowH    = 18
+    local newSize = UDim2.new(0, 220, 0, vis * rowH + 26)
+    kf.Size = newSize
+
+    local shouldShow = (vis > 0) and Library._keybindListVisible ~= false
+    local wasShowing = Library._kbListShowing
+    if shouldShow == wasShowing then return end
+    Library._kbListShowing = shouldShow
+
+    if shouldShow then
+        -- Fade in
+        kf.Visible = true
+        kf.BackgroundTransparency = 1
+        TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 0 }):Play()
+        for _, c in ipairs(kf:GetDescendants()) do
+            pcall(function()
+                if c:IsA("TextLabel") then
+                    c.TextTransparency = 1
+                    TweenService:Create(c, TweenInfo.new(0.4), { TextTransparency = 0 }):Play()
+                end
+            end)
+        end
+    else
+        -- Fade out
+        TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+        for _, c in ipairs(kf:GetDescendants()) do
+            pcall(function()
+                if c:IsA("TextLabel") then
+                    TweenService:Create(c, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
+                end
+            end)
+        end
+        task.delay(0.42, function()
+            if not Library._kbListShowing then kf.Visible = false end
+        end)
+    end
 end
 
+Library._kbListShowing    = false
 Library._keybindListVisible = true
 
 -- Periodically refresh active-state colours (every 0.1 s is imperceptible)
