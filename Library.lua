@@ -2037,9 +2037,18 @@ do
             })
             ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 1)
 
-            -- Widen popup to fit the "In Keybind List" label
+            -- Widen popup to fit the "In Keybind List" label (before items are added)
             ModeSelectOuter.Size = UDim2.new(0, math.max(ModeSelectOuter.Size.X.Offset, 120),
                                              0, ModeSelectOuter.Size.Y.Offset)
+
+            -- UnbindInner sits at absolute Y = ModeSelectInner.height + 3, but we
+            -- are about to push 19 px (1 divider + 18 listBtn) into ModeSelectInner
+            -- first, so shift Unbind down NOW to keep it below our row.
+            for _, child in ipairs(ModeSelectOuter:GetChildren()) do
+                if child ~= ModeSelectInner and child:IsA("Frame") then
+                    child.Position = child.Position + UDim2.new(0, 0, 0, 19)
+                end
+            end
 
             local listBtn = Library:Create("TextButton", {
                 BackgroundColor3 = Library.BackgroundColor;
