@@ -11101,6 +11101,7 @@ end
     Library._origTCPos      = nil
     Library._origTCSize     = nil
     Library._origBtnData    = {}
+    Library._hiddenTabs     = {}
 
     local _origAddTab = Window.AddTab
     function Window:AddTab(Name, ...)
@@ -11461,12 +11462,76 @@ end
 
 function Library:SetTabNamesVisible(visible)
     Library._tabNamesVisible = visible == true
-    for _, d in ipairs(Library._orderedTabs) do
-        local lbl = d.tab.ButtonLabel
-        if lbl then lbl.TextTransparency = visible and 0 or 1 end
+
+    -- ── Sidebar mode ──────────────────────────────────────────────────────
+    local sbActive = Library._sidebarFrame and Library._sidebarFrame.Visible
+    if sbActive then
+        local newW = visible and _SW or _SW_ICON
+        -- Resize sidebar and divider
+        Library._sidebarFrame.Size = UDim2.new(0, newW, 1, 0)
+        if Library._sidebarLine then
+            Library._sidebarLine.Position = UDim2.new(0, newW, 0, 0)
+        end
+        -- Shift content area
+        local TC = Library._TabContainer
+        if TC then
+            TC.Position = UDim2.new(0, newW + 4, 0, 4)
+            TC.Size     = UDim2.new(1, -(newW + 12), 1, -12)
+        end
+        -- Update each button: show/hide label, recentre/restore icon
+        for _, entry in ipairs(Library._sidebarButtons) do
+            entry.nameLabel.Visible = visible
+            if visible then
+                entry.iconLabel.AnchorPoint = Vector2.new(0, 0.5)
+                entry.iconLabel.Position    = UDim2.new(0, 6, 0.5, 0)
+            else
+                entry.iconLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+                entry.iconLabel.Position    = UDim2.new(0.5, 0, 0.5, 0)
+            end
+        end
+        return
     end
-    for _, entry in ipairs(Library._sidebarButtons) do
-        entry.nameLabel.Visible = visible
+
+    -- ── Top-bar mode ──────────────────────────────────────────────────────
+    -- Uses _origBtnData (set when icons were first applied) so no drift occurs.
+    for _, d in ipairs(Library._orderedTabs) do
+        local lbl  = d.tab.ButtonLabel
+        if not lbl then continue end
+        local btn  = lbl.Parent
+        if not btn then continue end
+        local icon = btn:FindFirstChild("_StarlightIcon")
+        local orig = Library._origBtnData[d.tab]
+
+        if visible then
+            lbl.Text = d.name
+            if icon and orig then
+                -- Restore left-anchored icon and full-width button
+                icon.AnchorPoint = Vector2.new(0, 0.5)
+                icon.Position    = UDim2.new(0, 4, 0.5, 0)
+                lbl.Position     = UDim2.new(0, 26, 0, 0)
+                lbl.Size         = UDim2.new(1, -26, 1, -1)
+                btn.Size         = UDim2.new(orig.btnSize.X.Scale,
+                                              orig.btnSize.X.Offset + 26,
+                                              orig.btnSize.Y.Scale,
+                                              orig.btnSize.Y.Offset)
+            elseif orig then
+                btn.Size     = orig.btnSize
+                lbl.Position = orig.lblPos
+                lbl.Size     = orig.lblSize
+            end
+        else
+            -- Clear text; shrink to icon-only square
+            lbl.Text = ""
+            if icon and orig then
+                icon.AnchorPoint = Vector2.new(0.5, 0.5)
+                icon.Position    = UDim2.new(0.5, 0, 0.5, 0)
+                lbl.Position     = UDim2.new(0, 0, 0, 0)
+                lbl.Size         = UDim2.new(0, 0, 1, -1)
+                btn.Size         = UDim2.new(orig.btnSize.X.Scale, 30,
+                                              orig.btnSize.Y.Scale,
+                                              orig.btnSize.Y.Offset)
+            end
+        end
     end
 end
 
@@ -11558,7 +11623,8 @@ function Library:_ApplyTopBarIcons()
 end
 
 -- ── Sidebar ──────────────────────────────────────────────────────────────────
-local _SW = 140
+local _SW      = 140  -- sidebar width with names
+local _SW_ICON =  44  -- sidebar width icon-only (no text)
 
 function Library:ApplySidebarLayout()
     if #Library._orderedTabs == 0 then return end
@@ -11593,6 +11659,7 @@ function Library:ApplySidebarLayout()
         e.iconLabel.ImageColor3=a and Color3.fromRGB(161,169,225) or Color3.fromRGB(100,103,130)
     end
     for i,d in ipairs(Library._orderedTabs) do
+        if Library._hiddenTabs[d.tab] then continue end
         local iconId=Library._tabIconData[d.tab]; local showIcon=iconId~=nil and Library._iconsVisible
         local btn=Instance.new("TextButton"); btn.BackgroundColor3=Color3.fromRGB(27,29,33)
         btn.BackgroundTransparency=0.4; btn.BorderSizePixel=0; btn.Size=UDim2.new(1,0,0,32)
@@ -11789,6 +11856,9 @@ function Library:SetupHomeTab(Window, config)
 
     local tab = Window:AddTab(tabName)
 
+    -- Mark this tab as hidden so the sidebar builder skips it
+    Library._hiddenTabs[tab] = true
+
     -- Remove this tab from the visible tab bar — it is accessed only through
     -- the title-bar icon button.  Setting size to zero collapses the button
     -- in the UIListLayout without needing to destroy it.
@@ -11823,6 +11893,31 @@ function Library:SetupHomeTab(Window, config)
     local playerCountLabel = leftBox:AddLabel("Players: ...", false)
     local pingLabel        = leftBox:AddLabel("Ping: ...", false)
     leftBox:AddDivider()
+
+    -- Build + branch (async GitHub fetch if config.GithubBuild is supplied)
+    local buildLabel  = leftBox:AddLabel("Build: ...", false)
+    local branchLabel = leftBox:AddLabel("Branch: ...", false)
+    leftBox:AddDivider()
+
+    task.spawn(function()
+        local gc = config.GithubBuild
+        if not gc then
+            buildLabel:SetText("Build: N/A"); branchLabel:SetText("Branch: N/A"); return
+        end
+        local branch = gc.Branch or "main"
+        branchLabel:SetText("Branch: " .. branch)
+        local ok, resp = pcall(function()
+            return game:HttpGet(string.format(
+                "https://api.github.com/repos/%s/%s/commits/%s",
+                gc.Owner, gc.Repo, branch))
+        end)
+        if not ok or not resp then buildLabel:SetText("Build: fetch error"); return end
+        local ok2, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(resp)
+        end)
+        if not ok2 or not data or not data.sha then buildLabel:SetText("Build: parse error"); return end
+        buildLabel:SetText("Build: " .. data.sha:sub(1, 7))
+    end)
 
     -- Live-update player count and ping every 2 seconds
     local function updateServerInfo()
