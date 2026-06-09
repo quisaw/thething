@@ -9569,21 +9569,26 @@ end
                 if not (ta and ta.Visible) then return end
                 if not Library._tabIndicator then
                     local ind = Instance.new("Frame")
-                    ind.BackgroundColor3    = Library.MainColor
-                    ind.BackgroundTransparency = 0
-                    ind.BorderSizePixel     = 0
-                    ind.Size                = UDim2.fromOffset(10, 10)
-                    ind.ZIndex              = 0   -- behind tab content
-                    ind.Parent              = msi
-                    Library:AddToRegistry(ind, { BackgroundColor3 = "MainColor" })
-                    Library._tabIndicator   = ind
+                    ind.BackgroundColor3       = Library.AccentColor
+                    ind.BackgroundTransparency = 0.75  -- 25% visible: clear tint on selected tab
+                    ind.BorderSizePixel        = 0
+                    ind.Size                   = UDim2.fromOffset(10, 10)
+                    ind.ZIndex                 = 0   -- behind tab text (ZIndex=1+)
+                    ind.Parent                 = msi
+                    Library:AddToRegistry(ind, { BackgroundColor3 = "AccentColor" })
+                    Instance.new("UICorner", ind).CornerRadius = UDim.new(0, 4)
+                    Library._tabIndicator = ind
                 end
                 local ind    = Library._tabIndicator
                 local msiAbs = msi.AbsolutePosition
                 local btnPos = TabButton.AbsolutePosition
                 local btnSz  = TabButton.AbsoluteSize
                 if btnSz.X == 0 then return end
-                local tPos = UDim2.fromOffset(btnPos.X - msiAbs.X, btnPos.Y - msiAbs.Y)
+                -- Clamp to MSI bounds so indicator never extends outside the menu
+                local maxX = math.max(msi.AbsoluteSize.X - btnSz.X, 0)
+                local rx   = math.clamp(btnPos.X - msiAbs.X, 0, maxX)
+                local ry   = math.clamp(btnPos.Y - msiAbs.Y, 0, math.max(msi.AbsoluteSize.Y - btnSz.Y, 0))
+                local tPos = UDim2.fromOffset(rx, ry)
                 local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
                 if not ind.Visible then
                     ind.Position = tPos; ind.Size = tSz; ind.Visible = true
@@ -10223,13 +10228,14 @@ end
                     if not Library._subTabIndicators then Library._subTabIndicators = {} end
                     if not Library._subTabIndicators[key] then
                         local si = Instance.new("Frame")
-                        si.BackgroundColor3    = Library.MainColor
-                        si.BackgroundTransparency = 0
-                        si.BorderSizePixel     = 0
-                        si.Size                = UDim2.fromOffset(10, 10)
-                        si.ZIndex              = 0
-                        si.Parent              = subBar.Parent or subBar
-                        Library:AddToRegistry(si, { BackgroundColor3 = "MainColor" })
+                        si.BackgroundColor3       = Library.AccentColor
+                        si.BackgroundTransparency = 0.75
+                        si.BorderSizePixel        = 0
+                        si.Size                   = UDim2.fromOffset(10, 10)
+                        si.ZIndex                 = 0
+                        si.Parent                 = subBar.Parent or subBar
+                        Library:AddToRegistry(si, { BackgroundColor3 = "AccentColor" })
+                        Instance.new("UICorner", si).CornerRadius = UDim.new(0, 4)
                         Library._subTabIndicators[key] = si
                     end
                     local si     = Library._subTabIndicators[key]
@@ -10238,7 +10244,10 @@ end
                     local btnPos = SubBtn.AbsolutePosition
                     local btnSz  = SubBtn.AbsoluteSize
                     if btnSz.X == 0 then return end
-                    local tPos = UDim2.fromOffset(btnPos.X - parAbs.X, btnPos.Y - parAbs.Y)
+                    local maxX = math.max(par.AbsoluteSize.X - btnSz.X, 0)
+                    local rx   = math.clamp(btnPos.X - parAbs.X, 0, maxX)
+                    local ry   = math.clamp(btnPos.Y - parAbs.Y, 0, math.max(par.AbsoluteSize.Y - btnSz.Y, 0))
+                    local tPos = UDim2.fromOffset(rx, ry)
                     local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
                     if not si.Visible then
                         si.Position = tPos; si.Size = tSz; si.Visible = true
@@ -12068,7 +12077,7 @@ function Library:ApplySidebarLayout()
     local ll=Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.HorizontalAlignment=Enum.HorizontalAlignment.Center; ll.VerticalAlignment=Enum.VerticalAlignment.Top
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,4); ll.Parent=tabInner
-    local pad=Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0,8)
+    local pad=Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0,4)
     pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6); pad.PaddingBottom=UDim.new(0,4)
     pad.Parent=tabInner
 
@@ -12076,12 +12085,13 @@ function Library:ApplySidebarLayout()
     -- Sidebar indicator handles button background; we only tween text/icon colors.
     if not Library._sbIndicator and Library._MSI then
         local si = Instance.new("Frame")
-        si.BackgroundColor3    = Library.MainColor
-        si.BackgroundTransparency = 0
+        si.BackgroundColor3    = Library.AccentColor
+        si.BackgroundTransparency = 0.75
         si.BorderSizePixel     = 0
         si.Size                = UDim2.fromOffset(10, 32)
         si.ZIndex              = 9
-        Library:AddToRegistry(si, { BackgroundColor3 = "MainColor" })
+        Library:AddToRegistry(si, { BackgroundColor3 = "AccentColor" })
+        Instance.new("UICorner", si).CornerRadius = UDim.new(0,4)
         Library._sbIndicator = si
     end
 
@@ -12687,13 +12697,13 @@ function Library:_RebuildKeybindList()
         if not picker then row.Visible = false; continue end
 
         local ok, st = pcall(function() return picker:GetState() end)
-        local active = (ok and st) or picker.Mode == "Always" or false
+        local active = (ok and st == true) or (picker.Mode == "Always") or false
         local inList = picker._inList or false
         local show   = inList and (Library._keybindListShowAll or active)
         row.Visible  = show
         if show then vis += 1 end
 
-        -- Tween text color only when state changes (0.3 s)
+        -- Fade the label TextColor on active-state change only
         local lbl = row:FindFirstChildWhichIsA("TextLabel")
         if lbl then
             local prev = Library._pickerActiveCache[picker]
@@ -12706,53 +12716,26 @@ function Library:_RebuildKeybindList()
         end
     end
 
-    local rowH    = 18
-    local newSize = UDim2.new(0, 220, 0, vis * rowH + 26)
-    kf.Size = newSize
+    kf.Size = UDim2.new(0, 220, 0, math.max(vis, 0) * 18 + 26)
 
     local shouldShow = (vis > 0) and Library._keybindListVisible ~= false
-    local wasShowing = Library._kbListShowing
-    if shouldShow == wasShowing then return end
 
-    -- Debounce: must remain stable for 0.3 s before triggering a transition.
-    -- This stops rapid flicker when pressing unbound keys fleetingly.
-    Library._kbPendingShow = shouldShow
-    task.delay(0.3, function()
-        if Library._kbPendingShow ~= shouldShow then return end
-        if Library._kbListShowing == shouldShow then return end
-        Library._kbListShowing = shouldShow
-
-    if shouldShow then
-        -- Fade in
+    -- Simple fade: just toggle Visible+BackgroundTransparency, no debounce needed
+    if shouldShow and not kf.Visible then
         kf.Visible = true
-        kf.BackgroundTransparency = 1
         TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 0 }):Play()
-        for _, c in ipairs(kf:GetDescendants()) do
-            pcall(function()
-                if c:IsA("TextLabel") then
-                    c.TextTransparency = 1
-                    TweenService:Create(c, TweenInfo.new(0.4), { TextTransparency = 0 }):Play()
-                end
-            end)
-        end
-    else
-        -- Fade out
+    elseif not shouldShow and kf.Visible then
         TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
-        for _, c in ipairs(kf:GetDescendants()) do
-            pcall(function()
-                if c:IsA("TextLabel") then
-                    TweenService:Create(c, TweenInfo.new(0.4), { TextTransparency = 1 }):Play()
-                end
-            end)
-        end
         task.delay(0.42, function()
-            if not Library._kbListShowing then kf.Visible = false end
+            -- Only hide if STILL not showing (avoids hiding during a re-show)
+            if not ((Library._keybindListVisible ~= false) and Library._kbHasVis) then
+                kf.Visible = false
+            end
         end)
     end
-    end)  -- end task.delay debounce
+    Library._kbHasVis = vis > 0
 end
 
-Library._kbListShowing    = false
 Library._keybindListVisible = true
 
 -- Periodically refresh active-state colours (every 0.1 s is imperceptible)
