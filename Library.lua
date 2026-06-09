@@ -2024,32 +2024,53 @@ do
 
         -- ── "Show in Keybind List" toggle (Starlight addition) ──────────────
         do
-            local listInRow = Library:Create("Frame", {
+            KeyPicker._inList = false
+
+            -- Add a divider row + a list-toggle row INSIDE ModeSelectInner
+            -- (ModeSelectInner already has UIListLayout, so these stack automatically)
+            local divRow = Library:Create("Frame", {
+                BackgroundColor3 = Library.OutlineColor;
+                BorderSizePixel  = 0;
+                Size             = UDim2.new(1, 0, 0, 1);
+                ZIndex           = 16;
+                Parent           = ModeSelectInner;
+            })
+            ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 1)
+
+            local listBtn = Library:Create("TextButton", {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3     = Library.OutlineColor;
                 BorderMode       = Enum.BorderMode.Inset;
-                Position         = UDim2.new(0, 0, 0, ModeSelectInner.Size.Y.Offset + 3);
                 Size             = UDim2.new(1, 0, 0, 18);
-                ZIndex           = 15;
-                Parent           = ModeSelectOuter;
+                Text             = "";
+                AutoButtonColor  = false;
+                ZIndex           = 16;
+                Parent           = ModeSelectInner;
             })
             ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 18)
-            Library:AddToRegistry(listInRow, { BackgroundColor3="BackgroundColor"; BorderColor3="OutlineColor" })
-
-            KeyPicker._inList = false
+            Library:AddToRegistry(listBtn, { BackgroundColor3="BackgroundColor"; BorderColor3="OutlineColor" })
 
             local listLabel = Library:CreateLabel({
-                Active = false; Size = UDim2.new(1, 0, 0, 15); TextSize = 13;
-                Text = "☐  Show in List"; ZIndex = 16; Parent = listInRow;
+                Size = UDim2.new(1, -6, 1, 0);
+                Position = UDim2.new(0, 6, 0, 0);
+                TextSize = 13;
+                Text = "[ ] Show in List";
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 17;
+                Parent = listBtn;
             })
 
-            listInRow.InputBegan:Connect(function(inp)
-                if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            listBtn.MouseButton1Click:Connect(function()
                 KeyPicker._inList = not KeyPicker._inList
-                listLabel.Text    = (KeyPicker._inList and "☑" or "☐") .. "  Show in List"
+                listLabel.Text    = (KeyPicker._inList and "[x]" or "[ ]") .. " Show in List"
                 ModeSelectOuter.Visible = false
-                -- Rebuild the list frame if it exists
                 if Library._RebuildKeybindList then Library._RebuildKeybindList() end
+            end)
+            listBtn.MouseEnter:Connect(function()
+                listBtn.BackgroundColor3 = Library.MainColor
+            end)
+            listBtn.MouseLeave:Connect(function()
+                listBtn.BackgroundColor3 = Library.BackgroundColor
             end)
         end
 
@@ -5426,41 +5447,63 @@ do
                 local gPos = Fill.AbsoluteSize.X
                 local Diff = mPos - (Fill.AbsolutePosition.X + gPos)
 
-                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
-                    local nMPos = Mouse.X
-                    -- Target: where the fill WOULD be if we snapped directly to the mouse
-                    local targetXOff = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize)
+                local lastTargetXOff = math.clamp(gPos, 0, Slider.MaxSize)
 
-                    -- Current fill width in pixels (derived from Slider.Value)
-                    local currScale  = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
-                    local currXOff   = currScale * Slider.MaxSize
+                -- Shared step: interpolate one frame toward a target offset
+                local function sliderStep(targetXOff)
+                    local currScale = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
+                    local currXOff  = currScale * Slider.MaxSize
+                    local dist      = math.abs(targetXOff - currXOff)
 
-                    -- Smooth interpolation: alpha proportional to distance.
-                    -- Max alpha 0.10 → large moves visible over ~0.7 s (42 frames).
-                    -- Min alpha 0.03 → tiny nudges visible over ~2.3 s.
-                    local dist     = math.abs(targetXOff - currXOff)
-                    local distFrac = dist / math.max(Slider.MaxSize, 1)
                     local smoothXOff
-                    if dist < 0.5 then
-                        smoothXOff = targetXOff  -- snap: 0 and Max always reachable
+                    -- Snap at extremes or when very close, so 0/Max are always reachable
+                    if dist < 0.5 or targetXOff <= 0 or targetXOff >= Slider.MaxSize then
+                        smoothXOff = targetXOff
                     else
-                        local alpha  = math.clamp(distFrac * 1.0, 0.03, 0.10)
-                        smoothXOff   = currXOff + (targetXOff - currXOff) * alpha
+                        local distFrac = dist / math.max(Slider.MaxSize, 1)
+                        local alpha    = math.clamp(distFrac * 1.0, 0.03, 0.10)
+                        smoothXOff     = currXOff + (targetXOff - currXOff) * alpha
                     end
-                    local nXScale    = Library:MapValue(smoothXOff, 0, Slider.MaxSize, 0, 1)
 
-                    local nValue = Slider:GetValueFromXScale(nXScale)
+                    local nXScale  = Library:MapValue(smoothXOff, 0, Slider.MaxSize, 0, 1)
+                    local nValue   = Slider:GetValueFromXScale(nXScale)
                     local OldValue = Slider.Value
-                    Slider.Value = nValue
-
+                    Slider.Value   = nValue
                     Slider:Display()
-
                     if nValue ~= OldValue then
                         Library:SafeCallback(Slider.Callback, Slider.Value)
                         Library:SafeCallback(Slider.Changed, Slider.Value)
                     end
+                    return smoothXOff
+                end
 
+                -- While mouse held: track target
+                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+                    local nMPos = Mouse.X
+                    lastTargetXOff = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize)
+                    sliderStep(lastTargetXOff)
                     RunService.RenderStepped:Wait()
+                end
+
+                -- After release: continue gliding to where the user pointed
+                do
+                    local currScale = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
+                    local currXOff  = currScale * Slider.MaxSize
+                    while math.abs(lastTargetXOff - currXOff) >= 0.5
+                          and lastTargetXOff > 0
+                          and lastTargetXOff < Slider.MaxSize do
+                        currXOff = sliderStep(lastTargetXOff)
+                        RunService.RenderStepped:Wait()
+                    end
+                    -- Final snap to exact target value
+                    local finalScale = lastTargetXOff / math.max(Slider.MaxSize, 1)
+                    local finalVal   = Slider:GetValueFromXScale(finalScale)
+                    if finalVal ~= Slider.Value then
+                        Slider.Value = finalVal
+                        Slider:Display()
+                        Library:SafeCallback(Slider.Callback, Slider.Value)
+                        Library:SafeCallback(Slider.Changed, Slider.Value)
+                    end
                 end
 
                 if Library.IsMobile then
