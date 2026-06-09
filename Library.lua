@@ -11147,6 +11147,21 @@ end
             end
         end
 
+        -- Add left/right padding to groupbox content containers so text
+        -- doesn't crowd the edges. Identify by: transparent Frame + UIListLayout.
+        for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
+            if inst:IsA("Frame") and inst.BackgroundTransparency == 1 then
+                pcall(function()
+                    if not inst:FindFirstChildWhichIsA("UIListLayout") then return end
+                    if inst:FindFirstChildWhichIsA("UIPadding") then return end
+                    local p = Instance.new("UIPadding")
+                    p.PaddingLeft  = UDim.new(0, 4)
+                    p.PaddingRight = UDim.new(0, 4)
+                    p.Parent       = inst
+                end)
+            end
+        end
+
         if Library._tabLayout == "Side" then
             Library:ApplySidebarLayout()
         elseif Library._iconsVisible then
@@ -11774,6 +11789,17 @@ function Library:SetupHomeTab(Window, config)
 
     local tab = Window:AddTab(tabName)
 
+    -- Remove this tab from the visible tab bar — it is accessed only through
+    -- the title-bar icon button.  Setting size to zero collapses the button
+    -- in the UIListLayout without needing to destroy it.
+    task.defer(function()
+        local tabBtn = tab.ButtonLabel and tab.ButtonLabel.Parent
+        if tabBtn then
+            tabBtn.Size             = UDim2.new(0, 0, 0, 0)
+            tabBtn.ClipsDescendants = true
+        end
+    end)
+
     -- ── Left column: Overview ─────────────────────────────────────────────
     local leftBox = tab:AddLeftGroupbox("Overview")
 
@@ -11792,10 +11818,27 @@ function Library:SetupHomeTab(Window, config)
     pcall(function()
         gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or gameName
     end)
-    leftBox:AddLabel("Game:  " .. gameName, true)
+    leftBox:AddLabel(gameName, true)
+
+    local playerCountLabel = leftBox:AddLabel("Players: ...", false)
+    local pingLabel        = leftBox:AddLabel("Ping: ...", false)
     leftBox:AddDivider()
 
-    local verStr = (execVersion and execVersion ~= "") and ("  v" .. execVersion) or ""
+    -- Live-update player count and ping every 2 seconds
+    local function updateServerInfo()
+        pcall(function()
+            local count = #cloneref(game:GetService("Players")):GetPlayers()
+            playerCountLabel:SetText("Players: " .. tostring(count))
+        end)
+        pcall(function()
+            local ms = math.floor(cloneref(game:GetService("Players")).LocalPlayer:GetNetworkPing() * 1000)
+            pingLabel:SetText("Ping: " .. tostring(ms) .. " ms")
+        end)
+    end
+    updateServerInfo()
+    task.spawn(function() while task.wait(2) do updateServerInfo() end end)
+
+    local verStr = (execVersion and execVersion ~= "") and ("  " .. execVersion) or ""
     leftBox:AddLabel(
         string.format('<font color="%s">%s</font>  <b>%s</b>%s', dotCol, dotChar, execName, verStr),
         false)
@@ -11848,24 +11891,42 @@ function Library:SetupHomeTab(Window, config)
         local icon = Library:GetIcon("app-window-mac")
         if not icon then return end
 
-        -- Centre the button vertically inside the header strip.
-        -- headerHeight is stored by CreateWindow (default 25 for a title-only window).
-        local hh  = Library._headerHeight or 25
-        local btn = Instance.new("ImageButton")
+        -- Square tab-styled button: same background as tab buttons, with UICorner + UIStroke.
+        -- Size matches the tab button height so it sits flush in the header strip.
+        local TAB_SZ = 22
+        local hh     = Library._headerHeight or 25
+        local btn    = Instance.new("ImageButton")
         btn.Name                   = "_StarlightHomeBtn"
-        btn.BackgroundTransparency = 1
+        btn.BackgroundColor3       = Library.BackgroundColor
+        btn.BackgroundTransparency = 0
+        btn.BorderSizePixel        = 0
+        btn.AutoButtonColor        = false
         btn.AnchorPoint            = Vector2.new(1, 0.5)
-        -- X: flush to the right edge of Inner, leaving a small gap.
-        -- Y: horizontally centred in the header strip.
-        btn.Position               = UDim2.new(1, -8, 0, math.floor(hh / 2))
-        btn.Size                   = UDim2.fromOffset(18, 18)
+        btn.Position               = UDim2.new(1, -4, 0, math.floor(hh / 2))
+        btn.Size                   = UDim2.fromOffset(TAB_SZ, TAB_SZ)
         btn.Image                  = icon.Url
         btn.ImageRectOffset        = icon.ImageRectOffset
         btn.ImageRectSize          = icon.ImageRectSize
         btn.ImageColor3            = Color3.fromRGB(161, 169, 225)
         btn.ZIndex                 = 20
         btn.Parent                 = Inner
-        btn.MouseButton1Click:Connect(function() pcall(function() tab:ShowTab() end) end)
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        local stroke               = Instance.new("UIStroke")
+        stroke.Color               = Library.OutlineColor
+        stroke.Thickness           = 1
+        stroke.ApplyStrokeMode     = Enum.ApplyStrokeMode.Border
+        stroke.Parent              = btn
+
+        local function setHomeActive(active)
+            btn.BackgroundColor3 = active and Library.MainColor or Library.BackgroundColor
+            stroke.Color         = active and Library.AccentColor or Library.OutlineColor
+        end
+        setHomeActive(true)  -- home tab is active on load
+
+        btn.MouseButton1Click:Connect(function()
+            pcall(function() tab:ShowTab() end)
+            setHomeActive(true)
+        end)
         btn.MouseEnter:Connect(function() btn.ImageColor3 = Color3.fromRGB(255,255,255) end)
         btn.MouseLeave:Connect(function() btn.ImageColor3 = Color3.fromRGB(161,169,225) end)
     end)
