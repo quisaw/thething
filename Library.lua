@@ -370,6 +370,7 @@ local Library = {
     _TabContainer   = nil;
     _origTCPos      = nil;
     _origTCSize     = nil;
+    _origBtnData    = {};   -- [tabObj] = {btnSize, lblPos, lblSize} — for icon toggle restore
 }
 
 -- Controller key mapping - moved to global scope for use in keybind handlers
@@ -11058,6 +11059,7 @@ end
     Library._sidebarLine    = nil
     Library._origTCPos      = nil
     Library._origTCSize     = nil
+    Library._origBtnData    = {}
 
     -- Wrap AddTab to record insertion order
     local _origAddTab = Window.AddTab
@@ -11452,34 +11454,40 @@ function Library:SetTabIconsVisible(visible)
             local icon = btn:FindFirstChild("_StarlightIcon")
             if visible then
                 if icon then
-                    icon.Visible = true
-                    lbl.Position = UDim2.new(0, 26, 0, 0)
-                    lbl.Size     = UDim2.new(1, -26, 1, -1)
+                    -- Restore icon-mode layout using stored originals
+                    local orig = Library._origBtnData[d.tab]
+                    if orig then
+                        icon.Visible = true
+                        btn.Size     = UDim2.new(orig.btnSize.X.Scale,
+                                                  orig.btnSize.X.Offset + 26,
+                                                  orig.btnSize.Y.Scale,
+                                                  orig.btnSize.Y.Offset)
+                        lbl.Position = UDim2.new(0, 26, 0, 0)
+                        lbl.Size     = UDim2.new(1, -26, 1, -1)
+                    end
                 elseif Library._tabIconData[d.tab] then
                     Library:_ApplyTopBarIcon(d.tab, Library._tabIconData[d.tab])
                 end
             else
                 if icon then
-                    icon.Visible = false
-                    -- Restore original label bounds (no icon)
-                    lbl.Position = UDim2.new(0, 0, 0, 0)
-                    lbl.Size     = UDim2.new(1, 0, 1, -1)
-                    -- Shrink button back
-                    btn.Size = UDim2.new(btn.Size.X.Scale,
-                                         btn.Size.X.Offset - 26,
-                                         btn.Size.Y.Scale,
-                                         btn.Size.Y.Offset)
+                    -- Restore original (no-icon) layout from stored originals
+                    local orig = Library._origBtnData[d.tab]
+                    if orig then
+                        icon.Visible = false
+                        btn.Size     = orig.btnSize
+                        lbl.Position = orig.lblPos
+                        lbl.Size     = orig.lblSize
+                    end
                 end
             end
         end
     end
 end
 
--- Internal: attach icon to one top-bar tab button and resize the button.
--- ICON_LEFT  = 4px  (gap from button left edge to icon left edge)
--- ICON_W     = 14px
--- ICON_GAP   = 8px  (gap from icon right edge to text left edge — matches ICON_LEFT visually)
--- TOTAL_EXTRA= 4+14+8 = 26px added to button width and label offset
+-- Internal: attach icon to one top-bar tab button.
+-- Stores the original button/label dimensions before modifying so they can
+-- be restored exactly on any number of enable/disable toggles.
+-- ICON_LEFT = 4px, ICON_W = 14px, ICON_GAP = 8px → TOTAL = 26px
 function Library:_ApplyTopBarIcon(tabObj, imageId)
     local lbl = tabObj.ButtonLabel
     if not lbl then return end
@@ -11492,31 +11500,38 @@ function Library:_ApplyTopBarIcon(tabObj, imageId)
         return
     end
 
-    local ICON_LEFT  = 4
-    local ICON_W     = 14
-    local ICON_GAP   = ICON_LEFT   -- same padding on both sides of icon
-    local TOTAL      = ICON_LEFT + ICON_W + ICON_GAP  -- = 26
+    -- Snapshot original dimensions before any modification
+    if not Library._origBtnData[tabObj] then
+        Library._origBtnData[tabObj] = {
+            btnSize = btn.Size,
+            lblPos  = lbl.Position,
+            lblSize = lbl.Size,
+        }
+    end
+
+    local TOTAL = 26  -- 4 (left gap) + 14 (icon) + 8 (right gap)
 
     local img = Instance.new("ImageLabel")
     img.Name                   = "_StarlightIcon"
     img.BackgroundTransparency = 1
     img.AnchorPoint            = Vector2.new(0, 0.5)
-    img.Position               = UDim2.new(0, ICON_LEFT, 0.5, 0)
-    img.Size                   = UDim2.fromOffset(ICON_W, ICON_W)
+    img.Position               = UDim2.new(0, 4, 0.5, 0)
+    img.Size                   = UDim2.fromOffset(14, 14)
     img.Image                  = imageId
     img.ImageColor3            = Color3.fromRGB(161, 169, 225)
     img.ZIndex                 = lbl.ZIndex + 1
     img.Parent                 = btn
 
-    -- Shift label right and shrink it so text doesn't overflow
+    -- Shift label right to make room for the icon
     lbl.Position = UDim2.new(0, TOTAL, 0, 0)
     lbl.Size     = UDim2.new(1, -TOTAL, 1, -1)
 
-    -- Widen the tab button so the full text is still visible
-    btn.Size = UDim2.new(btn.Size.X.Scale,
-                          btn.Size.X.Offset + TOTAL,
-                          btn.Size.Y.Scale,
-                          btn.Size.Y.Offset)
+    -- Widen the button to keep the full text visible
+    local orig = Library._origBtnData[tabObj]
+    btn.Size = UDim2.new(orig.btnSize.X.Scale,
+                          orig.btnSize.X.Offset + TOTAL,
+                          orig.btnSize.Y.Scale,
+                          orig.btnSize.Y.Offset)
 end
 
 function Library:_ApplyTopBarIcons()
