@@ -3024,7 +3024,16 @@ do
             -- ── Add copy / paste / rainbow row (only once) ──────────────────
             if not PickerFrameInner:FindFirstChild("_sl_cpButtons") then
                 local rowH = 22
-                local rowY = PickerFrameOuter.Size.Y.Offset - 2
+                -- For gradient pickers the gradient bars extend below the base height;
+                -- find the bottom-most element to place our row correctly.
+                local bottomY = 0
+                for _, child in ipairs(PickerFrameInner:GetChildren()) do
+                    if child:IsA("GuiObject") then
+                        local cy = child.Position.Y.Offset + child.Size.Y.Offset
+                        if cy > bottomY then bottomY = cy end
+                    end
+                end
+                local rowY = math.max(PickerFrameOuter.Size.Y.Offset - 2, bottomY + 4)
                 PickerFrameOuter.Size = UDim2.fromOffset(
                     PickerFrameOuter.Size.X.Offset,
                     rowY + rowH + 4)
@@ -9558,45 +9567,14 @@ end
             end
 
             Blocker.BackgroundTransparency = 0
-            TabHighlight.Visible = false  -- shared sliding indicator replaces per-tab highlight
+            TabHighlight.Visible = true  -- keep the 2px accent bar
 
-            -- Slide shared indicator to this tab button (skipped in sidebar mode)
-            -- The indicator IS the tab background; TabButton is transparent.
-            pcall(function()
-                local msi = Library._MSI   -- parent of TabArea, supports absolute positioning
-                if not msi then return end
-                local ta = Library._TabArea
-                if not (ta and ta.Visible) then return end
-                if not Library._tabIndicator then
-                    local ind = Instance.new("Frame")
-                    ind.BackgroundColor3       = Library.AccentColor
-                    ind.BackgroundTransparency = 0.75  -- 25% visible: clear tint on selected tab
-                    ind.BorderSizePixel        = 0
-                    ind.Size                   = UDim2.fromOffset(10, 10)
-                    ind.ZIndex                 = 0   -- behind tab text (ZIndex=1+)
-                    ind.Parent                 = msi
-                    Library:AddToRegistry(ind, { BackgroundColor3 = "AccentColor" })
-                    Instance.new("UICorner", ind).CornerRadius = UDim.new(0, 4)
-                    Library._tabIndicator = ind
-                end
-                local ind    = Library._tabIndicator
-                local msiAbs = msi.AbsolutePosition
-                local btnPos = TabButton.AbsolutePosition
-                local btnSz  = TabButton.AbsoluteSize
-                if btnSz.X == 0 then return end
-                -- Clamp to MSI bounds so indicator never extends outside the menu
-                local maxX = math.max(msi.AbsoluteSize.X - btnSz.X, 0)
-                local rx   = math.clamp(btnPos.X - msiAbs.X, 0, maxX)
-                local ry   = math.clamp(btnPos.Y - msiAbs.Y, 0, math.max(msi.AbsoluteSize.Y - btnSz.Y, 0))
-                local tPos = UDim2.fromOffset(rx, ry)
-                local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
-                if not ind.Visible then
-                    ind.Position = tPos; ind.Size = tSz; ind.Visible = true
-                else
-                    TweenService:Create(ind, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        { Position = tPos, Size = tSz }):Play()
-                end
-            end)
+            -- Tween the tab button's own background to show AccentColor tint
+            -- This is directly on TabButton so it ALWAYS works regardless of parent.
+            TabButton.BackgroundColor3 = Library.AccentColor
+            TweenService:Create(TabButton,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { BackgroundTransparency = 0.72 }):Play()
 
             TabFrame.Visible = true
             Library:_PlayTabAnimation(TabFrame)
@@ -9629,8 +9607,10 @@ end
 
         function Tab:HideTab()
             Blocker.BackgroundTransparency = 1
-            -- Background handled by shared indicator; just dim text
             TabHighlight.Visible = false
+            TweenService:Create(TabButton,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { BackgroundTransparency = 1 }):Play()
             TabFrame.Visible = false
         end
         Tab.Hide = Tab.HideTab
@@ -10218,44 +10198,11 @@ end
                 Library.ActiveSubTab = SubName
                 _deactivateAllSubBtns()
                 SubBtnBlocker.BackgroundTransparency = 0
-                SubBtnHighlight.Visible = false  -- shared indicator replaces per-subtab highlight
-
-                -- Slide per-tab sub-indicator to this sub-tab button
-                pcall(function()
-                    local subBar = SubBtn.Parent
-                    if not subBar then return end
-                    local key = tostring(Tab) .. "_subind"
-                    if not Library._subTabIndicators then Library._subTabIndicators = {} end
-                    if not Library._subTabIndicators[key] then
-                        local si = Instance.new("Frame")
-                        si.BackgroundColor3       = Library.AccentColor
-                        si.BackgroundTransparency = 0.75
-                        si.BorderSizePixel        = 0
-                        si.Size                   = UDim2.fromOffset(10, 10)
-                        si.ZIndex                 = 0
-                        si.Parent                 = subBar.Parent or subBar
-                        Library:AddToRegistry(si, { BackgroundColor3 = "AccentColor" })
-                        Instance.new("UICorner", si).CornerRadius = UDim.new(0, 4)
-                        Library._subTabIndicators[key] = si
-                    end
-                    local si     = Library._subTabIndicators[key]
-                    local par    = si.Parent
-                    local parAbs = par.AbsolutePosition
-                    local btnPos = SubBtn.AbsolutePosition
-                    local btnSz  = SubBtn.AbsoluteSize
-                    if btnSz.X == 0 then return end
-                    local maxX = math.max(par.AbsoluteSize.X - btnSz.X, 0)
-                    local rx   = math.clamp(btnPos.X - parAbs.X, 0, maxX)
-                    local ry   = math.clamp(btnPos.Y - parAbs.Y, 0, math.max(par.AbsoluteSize.Y - btnSz.Y, 0))
-                    local tPos = UDim2.fromOffset(rx, ry)
-                    local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
-                    if not si.Visible then
-                        si.Position = tPos; si.Size = tSz; si.Visible = true
-                    else
-                        TweenService:Create(si, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                            { Position = tPos, Size = tSz }):Play()
-                    end
-                end)
+                SubBtnHighlight.Visible = true
+                SubBtnInner.BackgroundColor3 = Library.AccentColor
+                TweenService:Create(SubBtnInner,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { BackgroundTransparency = 0.72 }):Play()
 
                 SubTabFrame.Visible = true
                 Library:_PlayTabAnimation(SubTabFrame)
@@ -10268,8 +10215,9 @@ end
             function SubTab:HideTab()
                 SubBtnBlocker.BackgroundTransparency = 1
                 SubBtnHighlight.Visible = false
-                SubBtnInner.BackgroundColor3 = Library.BackgroundColor
-                Library.RegistryMap[SubBtnInner].Properties.BackgroundColor3 = "BackgroundColor"
+                TweenService:Create(SubBtnInner,
+                    TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { BackgroundTransparency = 1 }):Play()
                 SubTabFrame.Visible = false
                 Tab.ActiveSubTabName = nil
                 if Tab.HasDirectElements then
@@ -12037,7 +11985,8 @@ function Library:ApplySidebarLayout()
     if Library._sidebarFrame then
         -- Re-show: sync frame/line widths with current names-hidden state
         Library._sidebarFrame.Visible = true
-        Library._sidebarFrame.Size    = UDim2.new(0,curW,1,0)
+        local _hh2 = Library._headerHeight or 25
+        Library._sidebarFrame.Size    = UDim2.new(0,curW,1,-_hh2)
         if Library._sidebarLine then
             Library._sidebarLine.Visible  = true
             Library._sidebarLine.Position = UDim2.new(0,curW,0,0)
@@ -12058,14 +12007,20 @@ function Library:ApplySidebarLayout()
     end
 
     -- ── Build the sidebar for the first time ──────────────────────────────
+    -- Parent sidebar to the inner window frame so it starts from the very top
+    -- of the content area with no left margin (MSI has an 8 px left indent).
+    local _sbParent = Library._Inner or MSI
+    local _hh       = Library._headerHeight or 25
     local sb = Instance.new("Frame")
     sb.Name="StarlightSidebar"; sb.BackgroundColor3=Color3.fromRGB(23,25,29)
-    sb.BorderSizePixel=0; sb.Position=UDim2.new(0,0,0,0); sb.Size=UDim2.new(0,curW,1,0)
-    sb.ZIndex=10; sb.Parent=MSI
+    sb.BorderSizePixel=0
+    sb.Position=UDim2.new(0,0,0,_hh)        -- start below the title bar
+    sb.Size=UDim2.new(0,curW,1,-_hh)        -- full height of content area
+    sb.ZIndex=10; sb.Parent=_sbParent
     Instance.new("UICorner",sb).CornerRadius=UDim.new(0,4)
     local line=Instance.new("Frame"); line.BackgroundColor3=Color3.fromRGB(44,47,54)
     line.BorderSizePixel=0; line.Position=UDim2.new(0,curW,0,0); line.Size=UDim2.new(0,1,1,0)
-    line.ZIndex=10; line.Parent=MSI; Library._sidebarLine=line
+    line.ZIndex=10; line.Parent=_sbParent; Library._sidebarLine=line
 
     -- Tab-buttons live in a dedicated inner frame so the home button
     -- can be positioned ABSOLUTELY at the bottom without UIListLayout interfering.
