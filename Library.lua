@@ -1779,7 +1779,7 @@ do
                 Parent = Library.KeybindContainer;
             })
             -- Store back-reference so _RebuildKeybindList can access GetState()
-            KeybindsToggleContainer._picker = KeyPicker
+            Library._pickerMap[KeybindsToggleContainer] = KeyPicker
 
             local KeybindsToggleOuter = Library:Create("Frame", {
                 BackgroundColor3 = Color3.new(0, 0, 0);
@@ -12357,6 +12357,10 @@ function Library:SetupHomeTab(Window, config)
 end
 
 -- ── Keybind list (Starlight) ─────────────────────────────────────────────────
+-- Maps KeybindsToggleContainer Frames → their KeyPicker object.
+-- We use a table instead of setting a property on the Instance (Roblox rejects that).
+Library._pickerMap = setmetatable({}, { __mode = "k" })  -- weak keys: GC-friendly
+
 Library._keybindListShowAll = false
 
 function Library:_RebuildKeybindList()
@@ -12367,7 +12371,7 @@ function Library:_RebuildKeybindList()
     local vis = 0
     for _, row in ipairs(kc:GetChildren()) do
         if not row:IsA("Frame") then continue end
-        local picker = row._picker
+        local picker = Library._pickerMap[row]
         if not picker then row.Visible = false; continue end
 
         local active = pcall(function() return picker:GetState() end) and picker:GetState() or false
