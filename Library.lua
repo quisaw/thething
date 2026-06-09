@@ -1754,6 +1754,10 @@ do
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
+        PickOuter.BorderSizePixel = 0
+        Instance.new("UICorner", PickOuter).CornerRadius = UDim.new(0, 4)
+        PickInner.BorderSizePixel = 0
+        Instance.new("UICorner", PickInner).CornerRadius = UDim.new(0, 4)
 
         local DisplayLabel = Library:CreateLabel({
             Size = UDim2.new(1, 0, 1, 0);
@@ -1913,6 +1917,7 @@ do
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
+        Instance.new("UICorner", ModeSelectInner).CornerRadius = UDim.new(0, 6)
 
         Library:Create("UIListLayout", {
             FillDirection = Enum.FillDirection.Vertical;
@@ -4619,6 +4624,10 @@ do
             BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
+        TextBoxOuter.BorderSizePixel = 0
+        Instance.new("UICorner", TextBoxOuter).CornerRadius = UDim.new(0, 4)
+        TextBoxInner.BorderSizePixel = 0
+        Instance.new("UICorner", TextBoxInner).CornerRadius = UDim.new(0, 4)
 
         Library:OnHighlight(TextBoxOuter, TextBoxOuter,
             { BorderColor3 = "AccentColor" },
@@ -5125,6 +5134,8 @@ do
         Library:AddToRegistry(SliderOuter, {
             BorderColor3 = "Black";
         })
+        SliderOuter.BorderSizePixel = 0
+        Instance.new("UICorner", SliderOuter).CornerRadius = UDim.new(0, 4)
 
         local SliderInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
@@ -5139,6 +5150,8 @@ do
             BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
+        SliderInner.BorderSizePixel = 0
+        Instance.new("UICorner", SliderInner).CornerRadius = UDim.new(0, 4)
 
         local Fill = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
@@ -5370,8 +5383,20 @@ do
 
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
                     local nMPos = Mouse.X
-                    local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize) -- what in tarnation are these variable names
-                    local nXScale = Library:MapValue(nXOffset, 0, Slider.MaxSize, 0, 1)
+                    -- Target: where the fill WOULD be if we snapped directly to the mouse
+                    local targetXOff = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize)
+
+                    -- Current fill width in pixels (derived from Slider.Value)
+                    local currScale  = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
+                    local currXOff   = currScale * Slider.MaxSize
+
+                    -- Interpolation alpha: proportional to distance so farther = faster.
+                    -- Clamped so the slider can never take more than ~0.4 s to reach the target.
+                    local distFrac  = math.abs(targetXOff - currXOff) / math.max(Slider.MaxSize, 1)
+                    local alpha     = math.clamp(distFrac * 3, 0.18, 0.85)
+
+                    local smoothXOff = currXOff + (targetXOff - currXOff) * alpha
+                    local nXScale    = Library:MapValue(smoothXOff, 0, Slider.MaxSize, 0, 1)
 
                     local nValue = Slider:GetValueFromXScale(nXScale)
                     local OldValue = Slider.Value
@@ -11121,10 +11146,16 @@ end
             if inst:IsA("Frame") and not inst:IsA("ScrollingFrame") then
                 pcall(function()
                     if inst:FindFirstChildWhichIsA("UICorner") then return end
-                    -- Determine effective size (handles Visible=false frames)
+                    -- Determine effective size — elements in hidden tabs have AbsoluteSize=(0,0)
+                    -- but their Size has scale or offset we can inspect.
                     local sz  = inst.AbsoluteSize
-                    local szX = sz.X > 3 and sz.X or inst.Size.X.Offset
-                    local szY = sz.Y > 3 and sz.Y or inst.Size.Y.Offset
+                    local function effDim(abs, s)
+                        if abs > 3 then return abs end
+                        if s.Scale > 0 then return 100 end  -- scale-based = meaningful size
+                        return s.Offset
+                    end
+                    local szX = effDim(sz.X, inst.Size.X)
+                    local szY = effDim(sz.Y, inst.Size.Y)
                     if szX <= 3 or szY <= 3 then return end
                     inst.BorderSizePixel = 0
                     Instance.new("UICorner", inst).CornerRadius = UDim.new(0, 6)
@@ -11752,6 +11783,13 @@ function Library:ApplySidebarLayout()
     end)
 
     Library._sidebarFrame=sb
+
+    -- Hide title-bar home button — replaced by the sidebar bottom button
+    local _inner = Library._Inner
+    if _inner then
+        local tb = _inner:FindFirstChild("_StarlightHomeBtn")
+        if tb then tb.Visible = false end
+    end
 end
 
 function Library:RemoveSidebarLayout()
@@ -11762,6 +11800,12 @@ function Library:RemoveSidebarLayout()
     if TC then
         TC.Position=Library._origTCPos or UDim2.new(0,8,0,30)
         TC.Size=Library._origTCSize or UDim2.new(1,-16,1,-38)
+    end
+    -- Restore title-bar home button
+    local _inner = Library._Inner
+    if _inner then
+        local tb = _inner:FindFirstChild("_StarlightHomeBtn")
+        if tb then tb.Visible = true end
     end
 end
 
@@ -11970,26 +12014,109 @@ function Library:SetupHomeTab(Window, config)
     local displayName = _lp.DisplayName or _lp.Name
     local userName    = _lp.Name
 
-    -- NOTE: AddLabel(text, doesWrap) — do NOT pass a table as 2nd arg,
-    -- that form treats arg1 as the index key and reads Text from the table.
-    leftBox:AddLabel("<b>Welcome,  " .. displayName .. "!</b>", false)
-    leftBox:AddLabel('<font color="rgb(165,165,165)">@' .. userName .. "</font>", false)
+    -- Helper: add a thin separator line under the groupbox category title.
+    -- Inserted as a sibling of the Container inside BoxInner — no effect on Resize.
+    local function addCategoryLine(box)
+        local inner = box.TitleLabel and box.TitleLabel.Parent
+        if not inner then return end
+        local div = Instance.new("Frame")
+        div.BackgroundColor3 = Color3.fromRGB(44, 47, 54)
+        div.BorderSizePixel  = 0
+        div.Position         = UDim2.new(0, 4, 0, 19)  -- just below title (y=2 + h=18 - 1)
+        div.Size             = UDim2.new(1, -8, 0, 1)
+        div.ZIndex           = 6
+        div.Parent           = inner
+    end
+
+    -- Helper: add a right-aligned inline label to an existing label row.
+    -- AddLabel creates a TextLabel whose non-wrapping form has a right-aligned
+    -- UIListLayout inside it, so any child placed there floats to the right.
+    local function addInlineRight(labelElem, text, color)
+        local tl = labelElem and labelElem.TextLabel
+        if not tl then return nil end
+        local r = Instance.new("TextLabel")
+        r.BackgroundTransparency = 1
+        r.Font            = Enum.Font.Gotham
+        r.TextSize        = 13
+        r.TextColor3      = color or Color3.fromRGB(165,165,165)
+        r.RichText        = true
+        r.AutomaticSize   = Enum.AutomaticSize.X
+        r.Size            = UDim2.new(0, 0, 1, 0)
+        r.LayoutOrder     = 9999
+        r.Text            = text
+        r.ZIndex          = tl.ZIndex + 1
+        r.Parent          = tl
+        return r
+    end
+
+    addCategoryLine(leftBox)
+
+    -- Row 1: Welcome [DisplayName]   |   Date (right-aligned)
+    local nameRow = leftBox:AddLabel("<b>Welcome,  " .. displayName .. "!</b>", false)
+    local dateInline = addInlineRight(nameRow, "")
+
+    -- Row 2: @username   |   Time (right-aligned)
+    local userRow = leftBox:AddLabel('<font color="rgb(165,165,165)">@' .. userName .. "</font>", false)
+    local timeInline = addInlineRight(userRow, "")
     leftBox:AddDivider()
+
+    -- ── Game Info category ────────────────────────────────────────────────
+    local gameBox = tab:AddLeftGroupbox("Game Info")
+    addCategoryLine(gameBox)
 
     local gameName = "Unknown Game"
     pcall(function()
         gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or gameName
     end)
-    leftBox:AddLabel(gameName, true)
+    gameBox:AddLabel(gameName, true)
 
-    local playerCountLabel = leftBox:AddLabel("Players: ...", false)
-    local pingLabel        = leftBox:AddLabel("Ping: ...", false)
-    leftBox:AddDivider()
+    local maxPlayers = 0
+    pcall(function()
+        maxPlayers = cloneref(game:GetService("Players")).MaxPlayers
+    end)
 
-    -- Build + branch (async GitHub fetch if config.GithubBuild is supplied)
-    local buildLabel  = leftBox:AddLabel("Build: ...", false)
-    local branchLabel = leftBox:AddLabel("Branch: ...", false)
-    leftBox:AddDivider()
+    local playerCountLabel = gameBox:AddLabel("Players: ...", false)
+    local pingLabel        = gameBox:AddLabel("Ping: ...", false)
+    gameBox:AddDivider()
+
+    -- Live clock (inline in Overview rows) and server info (in Game Info)
+    local function updateClock()
+        local now = os.date("*t")
+        local timeStr = string.format("%02d:%02d:%02d", now.hour, now.min, now.sec)
+        local dateStr = string.format("%02d/%02d/%02d", now.month, now.day, now.year % 100)
+        if timeInline then timeInline.Text = '<font color="rgb(165,165,165)">' .. timeStr .. "</font>" end
+        if dateInline then dateInline.Text = '<font color="rgb(165,165,165)">' .. dateStr .. "</font>" end
+    end
+    local function updateServerInfo()
+        pcall(function()
+            local count = #cloneref(game:GetService("Players")):GetPlayers()
+            local maxStr = maxPlayers > 0 and ("/" .. maxPlayers) or ""
+            playerCountLabel:SetText("Players: " .. count .. maxStr)
+        end)
+        pcall(function()
+            local ms = math.floor(cloneref(game:GetService("Players")).LocalPlayer:GetNetworkPing() * 1000)
+            pingLabel:SetText("Ping: " .. ms .. " ms")
+        end)
+    end
+    updateClock(); updateServerInfo()
+    task.spawn(function() while task.wait(1) do pcall(updateClock) end end)
+    task.spawn(function() while task.wait(2) do updateServerInfo() end end)
+
+    -- ── Info category: executor + build/branch ────────────────────────────
+    local infoBox = tab:AddLeftGroupbox("Info")
+    addCategoryLine(infoBox)
+
+    local verStr = (execVersion and execVersion ~= "") and ("  " .. execVersion) or ""
+    infoBox:AddLabel(
+        string.format('<font color="%s">%s</font>  <b>%s</b>%s', dotCol, dotChar, execName, verStr),
+        false)
+    infoBox:AddLabel(
+        string.format('<font color="%s">%s</font>', dotCol, statusText),
+        false)
+    infoBox:AddDivider()
+
+    local branchLabel = infoBox:AddLabel("Branch: ...", false)
+    local buildLabel  = infoBox:AddLabel("Build: ...",  false)
 
     task.spawn(function()
         local gc = config.GithubBuild
@@ -12011,30 +12138,9 @@ function Library:SetupHomeTab(Window, config)
         buildLabel:SetText("Build: " .. data.sha:sub(1, 7))
     end)
 
-    -- Live-update player count and ping every 2 seconds
-    local function updateServerInfo()
-        pcall(function()
-            local count = #cloneref(game:GetService("Players")):GetPlayers()
-            playerCountLabel:SetText("Players: " .. tostring(count))
-        end)
-        pcall(function()
-            local ms = math.floor(cloneref(game:GetService("Players")).LocalPlayer:GetNetworkPing() * 1000)
-            pingLabel:SetText("Ping: " .. tostring(ms) .. " ms")
-        end)
-    end
-    updateServerInfo()
-    task.spawn(function() while task.wait(2) do updateServerInfo() end end)
-
-    local verStr = (execVersion and execVersion ~= "") and ("  " .. execVersion) or ""
-    leftBox:AddLabel(
-        string.format('<font color="%s">%s</font>  <b>%s</b>%s', dotCol, dotChar, execName, verStr),
-        false)
-    leftBox:AddLabel(
-        string.format('<font color="%s">%s</font>', dotCol, statusText),
-        false)
-
-    -- ── Left column: Changelog (stacked below Overview) ───────────────────
+    -- ── Right column: Changelog ───────────────────────────────────────────
     local clBox = tab:AddRightGroupbox("Changelog")
+    addCategoryLine(clBox)
     if #changelog > 0 then
         for i, entry in ipairs(changelog) do
             local ver   = entry.Version or entry.version or ""
@@ -12053,20 +12159,6 @@ function Library:SetupHomeTab(Window, config)
         clBox:AddLabel("No changelog entries.", false)
     end
 
-    -- ── Right column: live clock & date ───────────────────────────────────
-    local rightBox = tab:AddRightGroupbox("Info")
-
-    local timeLabel = rightBox:AddLabel("00 : 00 : 00", false)
-    local dateLabel = rightBox:AddLabel("00 / 00 / 00", false)
-
-    local function updateClock()
-        local now = os.date("*t")
-        timeLabel:SetText(string.format("%02d : %02d : %02d", now.hour, now.min, now.sec))
-        dateLabel:SetText(string.format("%02d / %02d / %02d", now.month, now.day, now.year % 100))
-    end
-    updateClock()
-    task.spawn(function() while task.wait(1) do pcall(updateClock) end end)
-
     -- ── Auto-show + title-bar button ──────────────────────────────────────
     task.defer(function()
         task.wait()
@@ -12074,6 +12166,8 @@ function Library:SetupHomeTab(Window, config)
 
         local Inner = Library._Inner
         if not Inner or Inner:FindFirstChild("_StarlightHomeBtn") then return end
+        -- Don't create if sidebar is already active (sidebar has its own home button)
+        if Library._sidebarFrame and Library._sidebarFrame.Visible then return end
 
         local icon = Library:GetIcon("app-window-mac")
         if not icon then return end
