@@ -5572,18 +5572,17 @@ do
                     if not enterPressed then return end
                     local num = tonumber(overlay.Text)
                     if num then
-                        local clamped = math.clamp(num, Slider.Min, Slider.Max)
-                        -- Round to Slider.Rounding
+                        -- Round first, then validate bounds (no clamping — reject if out of range)
+                        local rounded
                         if Slider.Rounding == 0 then
-                            clamped = math.floor(clamped + 0.5)
+                            rounded = math.floor(num + 0.5)
                         else
-                            clamped = tonumber(string.format("%." .. Slider.Rounding .. "f", clamped))
+                            rounded = tonumber(string.format("%." .. Slider.Rounding .. "f", num))
                         end
-                        -- Reject out-of-bounds
-                        if clamped < Slider.Min or clamped > Slider.Max then
-                            Slider.Value = prevVal
+                        if rounded and rounded >= Slider.Min and rounded <= Slider.Max then
+                            Slider.Value = rounded
                         else
-                            Slider.Value = clamped
+                            Slider.Value = prevVal  -- restore: typed value is outside [Min, Max]
                         end
                         Slider:Display()
                         Library:SafeCallback(Slider.Callback, Slider.Value)
@@ -12055,14 +12054,15 @@ function Library:ApplySidebarLayout()
         e.button.BackgroundColor3 = Color3.fromRGB(27,29,33)
         e.nameLabel.TextColor3=a and Color3.fromRGB(255,255,255) or Color3.fromRGB(165,165,165)
         e.iconLabel.ImageColor3=a and Color3.fromRGB(161,169,225) or Color3.fromRGB(100,103,130)
-        if a and Library._sbIndicator then
-            local si = Library._sbIndicator
-            si.Parent = e.button.Parent
-            local parAbs = si.Parent.AbsolutePosition
+        if a and Library._sbIndicator and Library._sidebarFrame then
+            local si  = Library._sbIndicator
+            local sb  = Library._sidebarFrame        -- sb has NO UIListLayout → safe parent
+            si.Parent = sb
+            local sbAbs  = sb.AbsolutePosition
             local btnPos = e.button.AbsolutePosition
             local btnSz  = e.button.AbsoluteSize
             if btnSz.X > 0 then
-                local tPos = UDim2.fromOffset(btnPos.X - parAbs.X, btnPos.Y - parAbs.Y)
+                local tPos = UDim2.fromOffset(btnPos.X - sbAbs.X, btnPos.Y - sbAbs.Y)
                 local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
                 if not si.Visible then
                     si.Position=tPos; si.Size=tSz; si.Visible=true
@@ -12655,7 +12655,7 @@ function Library:_RebuildKeybindList()
         local active = (ok and st == true) or (picker.Mode == "Always") or false
         local inList = picker._inList or false
         local show   = inList and (Library._keybindListShowAll or active)
-        row.Visible  = show
+        if row.Visible ~= show then row.Visible = show end
         if show then vis += 1 end
 
         -- Fade the label TextColor on active-state change only
@@ -12675,23 +12675,25 @@ function Library:_RebuildKeybindList()
 
     local shouldShow = (vis > 0) and Library._keybindListVisible ~= false
 
-    -- Simple fade: just toggle Visible+BackgroundTransparency, no debounce needed
-    if shouldShow and not kf.Visible then
-        kf.Visible = true
-        TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 0 }):Play()
-    elseif not shouldShow and kf.Visible then
-        TweenService:Create(kf, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
-        task.delay(0.42, function()
-            -- Only hide if STILL not showing (avoids hiding during a re-show)
-            if not ((Library._keybindListVisible ~= false) and Library._kbHasVis) then
-                kf.Visible = false
-            end
-        end)
+    -- Only update visibility when state actually changes; avoid concurrent tweens
+    if shouldShow ~= kf.Visible and not Library._kbFading then
+        if shouldShow then
+            kf.Visible = true
+        else
+            Library._kbFading = true
+            task.delay(0.35, function()
+                Library._kbFading = false
+                if not ((Library._keybindListVisible ~= false) and Library._kbHasVis) then
+                    kf.Visible = false
+                end
+            end)
+        end
     end
     Library._kbHasVis = vis > 0
 end
 
 Library._keybindListVisible = true
+Library._kbFading          = false
 
 -- Periodically refresh active-state colours (every 0.1 s is imperceptible)
 task.spawn(function()
