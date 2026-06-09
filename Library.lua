@@ -270,6 +270,7 @@ local Library = {
     ScreenGui = ScreenGui;
     KeybindFrame = nil;
     KeybindContainer = nil;
+    _pickerMap = {};  -- maps KeybindsToggleContainer Frame → KeyPicker (table key, not Instance property)
     Window = { Holder = nil; Tabs = {}; };
 
     -- variables --
@@ -1779,7 +1780,9 @@ do
                 Parent = Library.KeybindContainer;
             })
             -- Store back-reference so _RebuildKeybindList can access GetState()
-            Library._pickerMap[KeybindsToggleContainer] = KeyPicker
+            if Library._pickerMap then
+                Library._pickerMap[KeybindsToggleContainer] = KeyPicker
+            end
 
             local KeybindsToggleOuter = Library:Create("Frame", {
                 BackgroundColor3 = Color3.new(0, 0, 0);
@@ -12357,10 +12360,6 @@ function Library:SetupHomeTab(Window, config)
 end
 
 -- ── Keybind list (Starlight) ─────────────────────────────────────────────────
--- Maps KeybindsToggleContainer Frames → their KeyPicker object.
--- We use a table instead of setting a property on the Instance (Roblox rejects that).
-Library._pickerMap = setmetatable({}, { __mode = "k" })  -- weak keys: GC-friendly
-
 Library._keybindListShowAll = false
 
 function Library:_RebuildKeybindList()
