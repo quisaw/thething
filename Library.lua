@@ -2037,6 +2037,10 @@ do
             })
             ModeSelectOuter.Size = ModeSelectOuter.Size + UDim2.new(0, 0, 0, 1)
 
+            -- Widen popup to fit the "In Keybind List" label
+            ModeSelectOuter.Size = UDim2.new(0, math.max(ModeSelectOuter.Size.X.Offset, 120),
+                                             0, ModeSelectOuter.Size.Y.Offset)
+
             local listBtn = Library:Create("TextButton", {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3     = Library.OutlineColor;
@@ -2051,10 +2055,10 @@ do
             Library:AddToRegistry(listBtn, { BackgroundColor3="BackgroundColor"; BorderColor3="OutlineColor" })
 
             local listLabel = Library:CreateLabel({
-                Size = UDim2.new(1, -6, 1, 0);
-                Position = UDim2.new(0, 6, 0, 0);
+                Size = UDim2.new(1, -8, 1, 0);
+                Position = UDim2.new(0, 8, 0, 0);
                 TextSize = 13;
-                Text = "[ ] Show in List";
+                Text = "In Keybind List: No";
                 TextXAlignment = Enum.TextXAlignment.Left;
                 ZIndex = 17;
                 Parent = listBtn;
@@ -2062,7 +2066,10 @@ do
 
             listBtn.MouseButton1Click:Connect(function()
                 KeyPicker._inList = not KeyPicker._inList
-                listLabel.Text    = (KeyPicker._inList and "[x]" or "[ ]") .. " Show in List"
+                listLabel.Text    = "In Keybind List: " .. (KeyPicker._inList and "Yes" or "No")
+                listLabel.TextColor3 = KeyPicker._inList
+                    and Color3.fromRGB(161,169,225)
+                    or  Library.FontColor
                 ModeSelectOuter.Visible = false
                 if Library._RebuildKeybindList then Library._RebuildKeybindList() end
             end)
@@ -5449,6 +5456,10 @@ do
 
                 local lastTargetXOff = math.clamp(gPos, 0, Slider.MaxSize)
 
+                -- Generation tag: if a new drag starts, old after-release loop stops
+                Slider._dragGen = (Slider._dragGen or 0) + 1
+                local myGen = Slider._dragGen
+
                 -- Shared step: interpolate one frame toward a target offset
                 local function sliderStep(targetXOff)
                     local currScale = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
@@ -5479,6 +5490,7 @@ do
 
                 -- While mouse held: track target
                 while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+                    if Slider._dragGen ~= myGen then break end
                     local nMPos = Mouse.X
                     lastTargetXOff = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize)
                     sliderStep(lastTargetXOff)
@@ -5486,23 +5498,30 @@ do
                 end
 
                 -- After release: continue gliding to where the user pointed
-                do
-                    local currScale = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
-                    local currXOff  = currScale * Slider.MaxSize
-                    while math.abs(lastTargetXOff - currXOff) >= 0.5
-                          and lastTargetXOff > 0
-                          and lastTargetXOff < Slider.MaxSize do
-                        currXOff = sliderStep(lastTargetXOff)
+                -- Exits immediately if a newer drag session has started (myGen check).
+                if Slider._dragGen == myGen then
+                    while Slider._dragGen == myGen do
+                        local cs = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
+                        local co = cs * Slider.MaxSize
+                        -- Stop if we've reached the target (or it's an extreme — snapped by sliderStep)
+                        if math.abs(lastTargetXOff - co) < 0.5
+                           or lastTargetXOff <= 0
+                           or lastTargetXOff >= Slider.MaxSize then
+                            break
+                        end
+                        sliderStep(lastTargetXOff)
                         RunService.RenderStepped:Wait()
                     end
-                    -- Final snap to exact target value
-                    local finalScale = lastTargetXOff / math.max(Slider.MaxSize, 1)
-                    local finalVal   = Slider:GetValueFromXScale(finalScale)
-                    if finalVal ~= Slider.Value then
-                        Slider.Value = finalVal
-                        Slider:Display()
-                        Library:SafeCallback(Slider.Callback, Slider.Value)
-                        Library:SafeCallback(Slider.Changed, Slider.Value)
+                    -- Final snap (only if still our session)
+                    if Slider._dragGen == myGen then
+                        local finalScale = lastTargetXOff / math.max(Slider.MaxSize, 1)
+                        local finalVal   = Slider:GetValueFromXScale(finalScale)
+                        if finalVal ~= Slider.Value then
+                            Slider.Value = finalVal
+                            Slider:Display()
+                            Library:SafeCallback(Slider.Callback, Slider.Value)
+                            Library:SafeCallback(Slider.Changed, Slider.Value)
+                        end
                     end
                 end
 
