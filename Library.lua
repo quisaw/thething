@@ -293,8 +293,8 @@ local Library = {
     IgnoreSubTabSizes = false;
     IgnoreLimit = 6;
     TabSize = 5;
-    EnlargeSubtabs = true;   
-    SubtabSize     = 8;      
+    EnlargeSubtabs = true;
+    SubtabSize     = 8;
     ControllerNavType = "Dpad";
     ControllerNavSensitivity = 5;
     -- icons --
@@ -357,16 +357,17 @@ local Library = {
 
     ImageManager = CustomImageManager;
 
-    -- ── Starlight additions ──────────────────────────────
-    -- Tab layout: "Top" (default, sidebar OFF) | "Side" (sidebar ON)
-    _tabLayout        = "Top";
-    -- Icons: false = OFF by default
-    _iconsVisible     = false;
-    -- Internal state (do not set manually)
-    _sidebarButtons   = {};
-    _tabIconData      = {};   -- [tabObj] = "rbxassetid://NNN"
-    _sidebarFrame     = nil;
-    _orderedTabs      = {};   -- {tab, name} in AddTab order
+    -- ── Starlight state (do not set manually) ────────────────
+    _tabLayout      = "Top";  -- "Top" (default/off) | "Side"
+    _iconsVisible   = false;  -- icons off by default
+    _sidebarButtons = {};
+    _tabIconData    = {};     -- [tabObj] = "rbxassetid://NNN"
+    _sidebarFrame   = nil;
+    _orderedTabs    = {};     -- {tab=tabObj, name="..."} in order
+    -- live references set inside CreateWindow:
+    _MSI            = nil;    -- MainSectionInner frame
+    _TabArea        = nil;    -- horizontal tab ScrollingFrame
+    _TabContainer   = nil;    -- tab content Frame
 }
 
 -- Controller key mapping - moved to global scope for use in keybind handlers
@@ -404,7 +405,7 @@ local SpecialKeysInput = {
 }
 
 if RunService:IsStudio() then
-   Library.IsMobile = InputService.TouchEnabled and not InputService.MouseEnabled 
+   Library.IsMobile = InputService.TouchEnabled and not InputService.MouseEnabled
 else
     pcall(function() Library.DevicePlatform = InputService:GetPlatform() end) -- For safety so the UI library doesn't error.
     Library.IsMobile = (Library.DevicePlatform == Enum.Platform.Android or Library.DevicePlatform == Enum.Platform.IOS)
@@ -736,9 +737,9 @@ function Library:Validate(Table: { [string]: any }, Template: { [string]: any })
     return Table
 end
 
-function Library:SetDPIScale(value: number) 
+function Library:SetDPIScale(value: number)
     assert(type(value) == "number", "Expected type number for DPI scale but got " .. typeof(value))
-    
+
     DPIScale = value / 100
     Library.MinSize = (if Library.IsMobile then Vector2.new(550, 200) else Vector2.new(550, 300)) * DPIScale
 end
@@ -861,7 +862,7 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
                 if IsMainWindow == true and Library.CantDragForced == true then
                     return
                 end
-           
+
                 local ObjPos = Vector2.new(
                     Mouse.X - Instance.AbsolutePosition.X,
                     Mouse.Y - Instance.AbsolutePosition.Y
@@ -949,7 +950,7 @@ function Library:MakeDraggable(Instance, Cutoff, IsMainWindow)
             end
         end)
         InputService.TouchEnded:Connect(function(Input)
-            if Input == DraggingInput then 
+            if Input == DraggingInput then
                 Dragging = false
             end
         end)
@@ -965,7 +966,7 @@ function Library:MakeDraggableUsingParent(Instance, Parent, Cutoff, IsMainWindow
                 if IsMainWindow == true and Library.CantDragForced == true then
                     return
                 end
-  
+
                 local ObjPos = Vector2.new(
                     Mouse.X - Parent.AbsolutePosition.X,
                     Mouse.Y - Parent.AbsolutePosition.Y
@@ -987,7 +988,7 @@ function Library:MakeDraggableUsingParent(Instance, Parent, Cutoff, IsMainWindow
                 end
             end
         end)
-    else  
+    else
         Library:MakeDraggable(Parent, Cutoff, IsMainWindow)
     end
 end
@@ -998,7 +999,7 @@ function Library:MakeResizable(Instance, MinSize)
     end
 
     Instance.Active = true
-    
+
     local ResizerImage_Size = 25 * DPIScale
     local ResizerImage_HoverTransparency = 0.5
 
@@ -1122,7 +1123,7 @@ function Library:AddToolTip(InfoStr, DisabledInfoStr, HoverInstance)
 
     local Label = Library:CreateLabel({
         Position = UDim2.fromOffset(3, 1);
-        
+
         TextSize = 14;
         Text = InfoStr;
         TextColor3 = Library.FontColor;
@@ -1191,7 +1192,7 @@ function Library:AddToolTip(InfoStr, DisabledInfoStr, HoverInstance)
                 return
             end
 
-            if Label.Text ~= DisabledInfoStr then 
+            if Label.Text ~= DisabledInfoStr then
                 UpdateText(DisabledInfoStr)
             end
         end
@@ -1216,7 +1217,7 @@ function Library:AddToolTip(InfoStr, DisabledInfoStr, HoverInstance)
         IsHovering = false
         Tooltip.Visible = false
     end))
-    
+
     if LibraryMainOuterFrame then
         GiveSignal(LibraryMainOuterFrame:GetPropertyChangedSignal("Visible"):Connect(function()
             if LibraryMainOuterFrame.Visible == false then
@@ -1243,7 +1244,7 @@ end
 
 function Library:MouseIsOverFrame(Frame, Input)
     local Pos = Mouse
-    if Library.IsMobile and Input then 
+    if Library.IsMobile and Input then
         Pos = Input.Position
     end
 
@@ -1262,7 +1263,7 @@ function Library:IsFrameInsideDialog(Frame)
 
     local Pos = Frame.AbsolutePosition
     local AbsPos, AbsSize = Library.ActiveDialog.Container.AbsolutePosition, Library.ActiveDialog.Container.AbsoluteSize
-   
+
     if Pos.X >= AbsPos.X and Pos.X <= AbsPos.X + AbsSize.X
         and Pos.Y >= AbsPos.Y and Pos.Y <= AbsPos.Y + AbsSize.Y then
 
@@ -1306,9 +1307,9 @@ function Library:OnHighlight(HighlightInstance, Instance, Properties, Properties
     end
 
     local function doHighlight()
-        if condition and not condition() then 
+        if condition and not condition() then
             undoHighlight()
-            return 
+            return
         end
 
         if Library.ActiveDialog and not Library:IsFrameInsideDialog(Instance) then
@@ -1617,7 +1618,7 @@ do
 
         if KeyPicker.Mode == "Press" then
             assert(ParentObj.Type == "Label" or ParentObj.Type == "Toggle", "KeyPicker with the mode \"Press\" can be only applied on Labels or Toggles.")
-            
+
             KeyPicker.SyncToggleState = false
             Info.Modes = { "Press" }
             Info.Mode = "Press"
@@ -1680,7 +1681,7 @@ do
         end
 
         local AreModifiersHeld = function(Required)
-            if not (typeof(Required) == "table" and GetTableSize(Required) > 0) then 
+            if not (typeof(Required) == "table" and GetTableSize(Required) > 0) then
                 return true
             end
 
@@ -1698,7 +1699,7 @@ do
         end
 
         local IsInputDown = function(Input)
-            if not Input then 
+            if not Input then
                 return false
             end
 
@@ -1878,7 +1879,7 @@ do
                 end
 
                 if KeybindsToggle.Normal then return end
-                                        
+
                 if (Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame()) or Input.UserInputType == Enum.UserInputType.Touch then
                     KeyPicker.Toggled = not KeyPicker.Toggled
                     KeyPicker:DoClick()
@@ -2052,7 +2053,7 @@ do
                     YSize = YSize + 18
                     local Label = Frame:FindFirstChild("TextLabel", true)
                     if not Label then continue end
-                    
+
                     local LabelSize = Label.TextBounds.X + 20
                     if (LabelSize > XSize) then
                         XSize = LabelSize
@@ -2067,7 +2068,7 @@ do
         function KeyPicker:GetState()
             if KeyPicker.Mode == "Always" then
                 return true
-            
+
             elseif KeyPicker.Mode == "Hold" then
                 local Key = KeyPicker.Value
                 if Key == "None" then
@@ -2125,7 +2126,7 @@ do
 
             DisplayLabel.Text = KeyPicker.DisplayValue
 
-            if Mode ~= nil and ModeButtons[Mode] ~= nil then 
+            if Mode ~= nil and ModeButtons[Mode] ~= nil then
                 ModeButtons[Mode]:Select()
             end
 
@@ -2281,7 +2282,7 @@ do
 
             elseif PickerInput.UserInputType == Enum.UserInputType.MouseButton2 and not Library:MouseIsOverOpenedFrame() then
                 local visible = KeyPicker:GetModePickerVisibility()
-                
+
                 if visible == false then
                     for _, option in next, Options do
                         if option.Type == "KeyPicker" then
@@ -2300,7 +2301,7 @@ do
             end
 
             if KeyPicker.Value == "Unknown" then return end
-        
+
             if (not Picking) and (not InputService:GetFocusedTextBox()) then
                 local Key = KeyPicker.Value
                 local HoldingModifiers = AreModifiersHeld(KeyPicker.Modifiers)
@@ -2332,7 +2333,7 @@ do
                         end
                     end
                 end
-																
+
                 if KeyPicker.Mode == "Toggle" then
                     if HoldingKey then
                         KeyPicker.Toggled = not KeyPicker.Toggled
@@ -2367,7 +2368,7 @@ do
                 KeyPicker:Update()
             end
         end))
-        
+
         KeyPicker:SetValue({ Info.Default, Info.Mode or "Toggle", Info.DefaultModifiers }, true)
         KeyPicker.DisplayFrame = PickOuter
 
@@ -2492,7 +2493,7 @@ do
         })
 
         -- Transparency image taken from https://github.com/matas3535/SplixPrivateDrawingLibrary/blob/main/Library.lua cus i'm lazy
-        -- local CheckerFrame = 
+        -- local CheckerFrame =
         Library:Create("ImageLabel", {
             BorderSizePixel = 0;
             Size = UDim2.new(0, 27, 0, 13);
@@ -2574,7 +2575,7 @@ do
             Parent = SatVibMap;
         })
 
-        -- local CursorInner = 
+        -- local CursorInner =
         Library:Create("ImageLabel", {
             Size = UDim2.new(0, CursorOuter.Size.X.Offset - 2, 0, CursorOuter.Size.Y.Offset - 2);
             Position = UDim2.new(0, 1, 0, 1);
@@ -2600,7 +2601,7 @@ do
             Parent = HueSelectorOuter;
         })
 
-        local HueCursor = Library:Create("Frame", { 
+        local HueCursor = Library:Create("Frame", {
             BackgroundColor3 = Color3.new(1, 1, 1);
             AnchorPoint = Vector2.new(0, 0.5);
             BorderColor3 = Color3.new(0, 0, 0);
@@ -2666,8 +2667,8 @@ do
         })
 
         local TransparencyBoxOuter, TransparencyBoxInner, TransparencyCursor
-        
-        if Info.Transparency then 
+
+        if Info.Transparency then
             TransparencyBoxOuter = Library:Create("Frame", {
                 BorderColor3 = Color3.new(0, 0, 0);
                 Position = UDim2.fromOffset(4, 251);
@@ -2695,7 +2696,7 @@ do
                 Parent = TransparencyBoxInner;
             })
 
-            TransparencyCursor = Library:Create("Frame", { 
+            TransparencyCursor = Library:Create("Frame", {
                 BackgroundColor3 = Color3.new(1, 1, 1);
                 AnchorPoint = Vector2.new(0.5, 0);
                 BorderColor3 = Color3.new(0, 0, 0);
@@ -2705,7 +2706,7 @@ do
             })
         end
 
-        -- local DisplayLabel = 
+        -- local DisplayLabel =
         Library:CreateLabel({
             Size = UDim2.new(1, 0, 0, 14);
             Position = UDim2.fromOffset(5, 5);
@@ -2794,7 +2795,7 @@ do
                 if Library.IsMobile then
                     Library.CanDrag = true
                 end
-                
+
                 self.Container.Visible = false
             end
 
@@ -2813,7 +2814,7 @@ do
                     TextXAlignment = Enum.TextXAlignment.Left,
                 })
 
-                Library:OnHighlight(Button, Button, 
+                Library:OnHighlight(Button, Button,
                     { TextColor3 = "AccentColor" },
                     { TextColor3 = "FontColor" }
                 )
@@ -3755,7 +3756,7 @@ do
 
                             Table:UpdateButton()
                             Dropdown:Display()
-                            
+
                             Library:UpdateDependencyBoxes()
                             Library:UpdateDependencyGroupboxes()
                             Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
@@ -3777,7 +3778,7 @@ do
 
                 Buttons[Button] = Table
             end
-            
+
             Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * (20 * DPIScale)) + 1)
 
             -- Workaround for silly roblox bug - not sure why it happens but sometimes the dropdown list will be empty
@@ -3837,7 +3838,7 @@ do
             Dropdown.Visible = Visibility
 
             DropdownOuter.Visible = Dropdown.Visible
-            if not Dropdown.Visible then 
+            if not Dropdown.Visible then
                 Dropdown:CloseDropdown()
             end
         end
@@ -3871,7 +3872,7 @@ do
                 DropdownInnerSearch.Text = ""
                 DropdownInnerSearch.Visible = true
             end
-            
+
             ListOuter.Visible = true
             Library.OpenedFrames[ListOuter] = true
             DropdownArrow.Rotation = 180
@@ -3881,7 +3882,7 @@ do
         end
 
         function Dropdown:CloseDropdown()
-            if Library.IsMobile then         
+            if Library.IsMobile then
                 Library.CanDrag = true
             end
 
@@ -3890,7 +3891,7 @@ do
                 DropdownInnerSearch.Visible = false
                 ItemList.Visible = true
             end
-        
+
             ListOuter.Visible = false
             Library.OpenedFrames[ListOuter] = nil
             DropdownArrow.Rotation = 0
@@ -4188,7 +4189,7 @@ do
             if select(1, ...) ~= nil then
                 assert(typeof(select(1, ...)) == "string", "Expected string for Idx, got " .. typeof(select(1, ...)))
             end
-            
+
             local Params = select(2, ...)
 
             Data.Text = Params.Text or ""
@@ -4201,7 +4202,7 @@ do
         end
 
         Data.OriginalText = Data.Text
-        
+
         local Label = {
             Type = "Label"
         }
@@ -4252,12 +4253,12 @@ do
             setmetatable(Label, BaseAddons)
         end
 
-        -- Blank = 
+        -- Blank =
         Groupbox:AddBlank(5)
         Groupbox:Resize()
 
         table.insert(Groupbox.Elements, Label)
-        
+
         if Data.Idx then
             -- Options[Data.Idx] = Label;
             Labels[Data.Idx] = Label
@@ -4267,7 +4268,7 @@ do
 
         return Label
     end
-    
+
     function BaseGroupboxFuncs:AddButton(...)
         local Button = typeof(select(1, ...)) == "table" and select(1, ...) or {
             Text = select(1, ...),
@@ -4442,7 +4443,7 @@ do
                     if SubButton.TooltipTable then
                         SubButton.TooltipTable:Destroy()
                     end
-                
+
                     SubButton.TooltipTable = Library:AddToolTip(tooltip, disabledTooltip, self.Outer)
                     SubButton.TooltipTable.Disabled = SubButton.Disabled
                 end
@@ -4472,7 +4473,7 @@ do
                 SubButton.TooltipTable.Disabled = SubButton.Disabled
             end
 
-            task.delay(0.1, SubButton.UpdateColors, SubButton)																				
+            task.delay(0.1, SubButton.UpdateColors, SubButton)
             InitEvents(SubButton)
 
             table.insert(Buttons, SubButton)
@@ -5180,7 +5181,7 @@ do
             Library.RegistryMap[Fill].Properties.BackgroundColor3 = Slider.Disabled and "DisabledAccentColor" or "AccentColor"
             Library.RegistryMap[Fill].Properties.BorderColor3 = Slider.Disabled and "DisabledOutlineColor" or "AccentColorDark"
         end
-        
+
         function Slider:Display()
             local CustomDisplayText = nil
             if Info.FormatDisplayValue then
@@ -5198,7 +5199,7 @@ do
                     DisplayLabel.Text = string.format("%s%s%s", Slider.Prefix, FormattedValue, Slider.Suffix)
 
                 else
-                    DisplayLabel.Text = string.format("%s%s%s/%s%s%s", 
+                    DisplayLabel.Text = string.format("%s%s%s/%s%s%s",
                         Slider.Prefix, FormattedValue, Slider.Suffix,
                         Slider.Prefix, tostring(Slider.Max), Slider.Suffix)
                 end
@@ -5217,7 +5218,7 @@ do
             -- if Slider.Disabled then
             --     return;
             -- end;
-            
+
             -- Library:SafeCallback(Func, Slider.Value);
         end
 
@@ -5232,15 +5233,15 @@ do
         function Slider:GetValueFromXScale(X)
             return Round(Library:MapValue(X, 0, 1, Slider.Min, Slider.Max))
         end
-        
+
         function Slider:SetMax(Value)
             assert(Value > Slider.Min, "Max value cannot be less than the current min value.")
-            
+
             Slider.Value = math.clamp(Slider.Value, Slider.Min, Value)
             Slider.Max = Value
             Slider:Display()
         end
-        
+
         function Slider:SetMin(Value)
             assert(Value < Slider.Max, "Min value cannot be greater than the current max value.")
 
@@ -5366,7 +5367,7 @@ do
                 if Library.IsMobile then
                     Library.CanDrag = true
                 end
-                
+
                 for _, Side in pairs(Sides) do
                     if typeof(Side) == "Instance" then
                         if Side:IsA("ScrollingFrame") then
@@ -5691,7 +5692,7 @@ do
             Info.Default = 1
             warn(string.format("AddDropdown (IDX: %s): Missing default value, selected the first index instead. Pass `AllowNull` as true if this was intentional.", tostring(Idx)))
         end
-        
+
         Info.Searchable = if typeof(Info.Searchable) == "boolean" then Info.Searchable else false
         Info.FormatDisplayValue = if typeof(Info.FormatDisplayValue) == "function" then Info.FormatDisplayValue else nil
         Info.FormatListValue = if typeof(Info.FormatListValue) == "function" then Info.FormatListValue else nil
@@ -6074,7 +6075,7 @@ do
 
                             Table:UpdateButton()
                             Dropdown:Display()
-                            
+
                             Library:UpdateDependencyBoxes()
                             Library:UpdateDependencyGroupboxes()
                             Library:SafeCallback(Dropdown.Callback, Dropdown.Value)
@@ -6198,7 +6199,7 @@ do
         end
 
         function Dropdown:CloseDropdown()
-            if Library.IsMobile then            
+            if Library.IsMobile then
                 Library.CanDrag = true
             end
 
@@ -6446,7 +6447,7 @@ do
             if not Viewport.Interactive then
                 return
             end
-            
+
             for _, Side in pairs(Library.Window.Tabs[Library.ActiveTab]:GetSides()) do
                 if typeof(Side) == "Instance" then
                     if Side:IsA("ScrollingFrame") then
@@ -6635,9 +6636,9 @@ do
         Viewport.Holder = Holder
         Viewport.Container = Container
 		Viewport.ViewportFrame = ViewportFrame
-        Viewport.Box = Box                      
-        Viewport.Camera = Viewport.Camera        
-        Viewport.Object = Viewport.Object																																											
+        Viewport.Box = Box
+        Viewport.Camera = Viewport.Camera
+        Viewport.Object = Viewport.Object
 
         table.insert(Groupbox.Elements, Viewport)
         Options[Idx] = Viewport
@@ -7499,7 +7500,7 @@ do
         SortOrder = Enum.SortOrder.LayoutOrder;
         Parent = Library.MiddleNotificationArea;
     })
-        
+
     function Library:SetNotifySide(Side: string)
         Library.NotifySide = Side
     end
@@ -7790,13 +7791,13 @@ do
                     ZIndex = 11004,
                     Parent = InnerFrame,
                 })
-                
+
                 if not Data.IconColor then
                     Library:AddToRegistry(IconLabel, {
                         ImageColor3 = "FontColor";
                     }, true)
                 end
-                
+
                 if Side == "right" then
                     TextPosition = UDim2.new(1, -8, 0, 0)
                 end
@@ -8147,7 +8148,7 @@ function Library:CreateWindow(...)
     local Window = {
         Tabs = {};
 
-        OriginalTitle = WindowInfo.Title; 
+        OriginalTitle = WindowInfo.Title;
         Title = WindowInfo.Title;
     }
 
@@ -8328,7 +8329,7 @@ function Library:CreateWindow(...)
         ZIndex = 2;
         Parent = MainSectionInner;
     })
-    
+
     local InnerVideoBackground = Library:Create("VideoFrame", {
         BackgroundColor3 = Library.MainColor;
         BorderMode = Enum.BorderMode.Inset;
@@ -8379,7 +8380,7 @@ function Library:CreateWindow(...)
             BackgroundImage.Visible = false
             return
         end
-        
+
         assert(Icon, "Image must be a valid Roblox asset or a valid URL or a valid lucide icon.")
 
         BackgroundImage.Image = Icon.Url
@@ -8560,7 +8561,7 @@ function Library:CreateWindow(...)
             SortOrder = Enum.SortOrder.LayoutOrder,
             Parent = DialogContainer,
         })
-        
+
         local _Sep2 = Library:Create("Frame", {
             BackgroundColor3 = Library.OutlineColor,
             BackgroundTransparency = 0,
@@ -8635,7 +8636,7 @@ function Library:CreateWindow(...)
                 for _, v in pairs(DialogContainer:GetDescendants()) do
                     if not v:IsA("GuiObject") then continue end
                     if v:GetAttribute("ZIndexApplied") then continue end
-                    
+
                     v:SetAttribute("ZIndexApplied", true)
                     v.ZIndex = v.ZIndex + 9003
                 end
@@ -8662,7 +8663,7 @@ function Library:CreateWindow(...)
         function Dialog:Dismiss()
             TweenService:Create(DialogScale, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 0.95 }):Play()
             TweenService:Create(DialogOverlay, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 }):Play()
-            
+
             task.delay(0.1, function()
                 DialogOverlay:Destroy()
             end)
@@ -8833,7 +8834,7 @@ function Library:CreateWindow(...)
                 TweenService:Create(ProgressBar, TweenInfo.new(WaitTime, Enum.EasingStyle.Linear), {
                     Size = UDim2.new(1, 0, 0, 2)
                 }):Play()
-                
+
                 task.delay(WaitTime, function()
                     ButtonWrap:SetDisabled(false)
 
@@ -9035,7 +9036,7 @@ do
                 ZIndex = 5;
                 Parent = TopBarScrollingFrame;
             })
-            
+
             Library:Create("Frame", {
                 BackgroundTransparency = 1;
                 Size = UDim2.new(1, 0, 0, 5);
@@ -9044,7 +9045,7 @@ do
                 Parent = TopBarInner;
             })
         end
-        
+
         local LeftSide = Library:Create("ScrollingFrame", {
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
@@ -9116,7 +9117,7 @@ do
                 local ChangeTick = tick()
                 SidesValues.Right = ChangeTick
                 task.wait(0.15)
-                
+
                 if SidesValues.Right == ChangeTick then
                     Library.CanDrag = true
                 end
@@ -9184,7 +9185,7 @@ end
             TopBarInner.BorderColor3 = Tab.WarningBox.IsNormal == true and Library.OutlineColor or Color3.fromRGB(0, 0, 0)
             TopBarInner.BackgroundColor3 = Tab.WarningBox.IsNormal == true and Library.BackgroundColor or Color3.fromRGB(117, 22, 17)
             TopBarHighlight.BackgroundColor3 = Tab.WarningBox.IsNormal == true and Library.AccentColor or Color3.fromRGB(255, 75, 75)
-             
+
             TopBarLabel.TextColor3 = Tab.WarningBox.IsNormal == true and Library.FontColor or Color3.fromRGB(255, 55, 55)
             TopBarLabelStroke.Color = Tab.WarningBox.IsNormal == true and Library.Black or Color3.fromRGB(174, 3, 3)
 
@@ -10764,7 +10765,7 @@ end
 
             elseif Desc:IsA("Frame") or Desc:IsA("ScrollingFrame") then
                 table.insert(Properties, "BackgroundTransparency")
-                
+
             elseif Desc:IsA("UIStroke") then
                 table.insert(Properties, "Transparency")
             end
@@ -10799,12 +10800,12 @@ end
         if Library.Unloaded then
             return
         end
-        
+
         -- Right stick click acts as mouse click when menu is open
         if Library.Toggled and Input.KeyCode == Enum.KeyCode.Thumbstick2 then
             local CurrentMouse = Mouse
             local GuiObjects = CurrentMouse.Target and {CurrentMouse.Target} or {}
-            
+
             for _, Object in ipairs(GuiObjects) do
                 if Object:IsA("GuiButton") then
                     Object:TriggerEvent("MouseButton1Click")
@@ -10812,11 +10813,11 @@ end
                 end
             end
         end
-        
+
         if typeof(Library.ToggleKeybind) == "table" and Library.ToggleKeybind.Type == "KeyPicker" then
             local BindValue = Library.ToggleKeybind.Value
             local IsMatch = false
-            
+
             -- Check keyboard
             if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == BindValue then
                 IsMatch = true
@@ -10832,7 +10833,7 @@ end
                     IsMatch = true
                 end
             end
-            
+
             if IsMatch then
                 task.spawn(Library.Toggle)
             end
@@ -10851,7 +10852,7 @@ end
             Visible = true;
             Parent = ScreenGui;
         })
-    
+
         local ToggleUIInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.AccentColor;
@@ -10860,11 +10861,11 @@ end
             ZIndex = 201;
             Parent = ToggleUIOuter;
         })
-    
+
         Library:AddToRegistry(ToggleUIInner, {
             BorderColor3 = "AccentColor";
         })
-    
+
         local ToggleUIInnerFrame = Library:Create("Frame", {
             BackgroundColor3 = Color3.new(1, 1, 1);
             BorderSizePixel = 0;
@@ -10873,7 +10874,7 @@ end
             ZIndex = 202;
             Parent = ToggleUIInner;
         })
-    
+
         local ToggleUIGradient = Library:Create("UIGradient", {
             Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
@@ -10882,7 +10883,7 @@ end
             Rotation = -90;
             Parent = ToggleUIInnerFrame;
         })
-    
+
         Library:AddToRegistry(ToggleUIGradient, {
             Color = function()
                 return ColorSequence.new({
@@ -10891,7 +10892,7 @@ end
                 })
             end
         })
-    
+
         local ToggleUIButton = Library:Create("TextButton", {
             Position = UDim2.new(0, 5, 0, 0);
             Size = UDim2.new(1, -4, 1, 0);
@@ -10905,7 +10906,7 @@ end
             ZIndex = 203;
             Parent = ToggleUIInnerFrame;
         })
-    
+
         Library:MakeDraggableUsingParent(ToggleUIButton, ToggleUIOuter)
 
         ToggleUIButton.MouseButton1Down:Connect(function()
@@ -10921,7 +10922,7 @@ end
             Visible = true;
             Parent = ScreenGui;
         })
-    
+
         local LockUIInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.AccentColor;
@@ -10930,11 +10931,11 @@ end
             ZIndex = 201;
             Parent = LockUIOuter;
         })
-    
+
         Library:AddToRegistry(LockUIInner, {
             BorderColor3 = "AccentColor";
         })
-    
+
         local LockUIInnerFrame = Library:Create("Frame", {
             BackgroundColor3 = Color3.new(1, 1, 1);
             BorderSizePixel = 0;
@@ -10943,7 +10944,7 @@ end
             ZIndex = 202;
             Parent = LockUIInner;
         })
-    
+
         local LockUIGradient = Library:Create("UIGradient", {
             Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor)),
@@ -10952,7 +10953,7 @@ end
             Rotation = -90;
             Parent = LockUIInnerFrame;
         })
-    
+
         Library:AddToRegistry(LockUIGradient, {
             Color = function()
                 return ColorSequence.new({
@@ -10961,7 +10962,7 @@ end
                 })
             end
         })
-    
+
         local LockUIButton = Library:Create("TextButton", {
             Position = UDim2.new(0, 5, 0, 0);
             Size = UDim2.new(1, -4, 1, 0);
@@ -10975,9 +10976,9 @@ end
             ZIndex = 203;
             Parent = LockUIInnerFrame;
         })
-    
+
         Library:MakeDraggableUsingParent(LockUIButton, LockUIOuter)
-        
+
         LockUIButton.MouseButton1Down:Connect(function()
             Library.CantDragForced = not Library.CantDragForced
             LockUIButton.Text = Library.CantDragForced and "Unlock UI" or "Lock UI"
@@ -11043,8 +11044,13 @@ end
     Window.Holder = Outer
     Library.Window = Window
 
-    -- Capture AddTab order so sidebar and icon data works correctly.
-    -- We store {tab, name} in Library._orderedTabs in insertion order.
+    -- Store direct references to the key frames so sidebar/icon code
+    -- never has to guess or walk the hierarchy.
+    Library._MSI          = MainSectionInner
+    Library._TabArea      = TabArea
+    Library._TabContainer = TabContainer
+
+    -- Record AddTab insertion order for the sidebar button list.
     Library._orderedTabs    = {}
     Library._sidebarButtons = {}
     Library._sidebarFrame   = nil
@@ -11059,33 +11065,32 @@ end
     end
 
     task.defer(function()
-        task.wait()  -- let SnowFall finish its own deferred layout work
+        task.wait()   -- let SnowFall finish its own deferred layout
 
-        -- A. UICorner + UIStroke on every qualifying Frame.
-        --    CRITICAL: check inst:IsA("Frame") BEFORE accessing AbsoluteSize.
-        --    UICorner/UIStroke/UIListLayout do not have AbsoluteSize.
+        -- A. UICorner + UIStroke on every Frame.
+        --    Guard: ONLY call :IsA("Frame") — never access .AbsoluteSize on
+        --    UICorner/UIStroke/UIListLayout/etc. That's what caused the
+        --    "Size is not a valid member of UICorner" errors.
         for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
-            if inst:IsA("Frame") then
+            if inst:IsA("Frame") and not inst:IsA("ScrollingFrame") then
                 pcall(function()
                     local sz = inst.AbsoluteSize
                     if sz.X <= 3 or sz.Y <= 3 then return end
                     if inst:FindFirstChildWhichIsA("UICorner") then return end
                     inst.BorderSizePixel = 0
-                    local uc = Instance.new("UICorner")
-                    uc.CornerRadius = UDim.new(0, 6)
-                    uc.Parent = inst
+                    Instance.new("UICorner", inst).CornerRadius = UDim.new(0, 6)
                     if inst.BackgroundTransparency < 1 then
                         local us = Instance.new("UIStroke")
-                        us.Color = Library.OutlineColor
-                        us.Thickness = 1
+                        us.Color           = Library.OutlineColor
+                        us.Thickness       = 1
                         us.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                        us.Parent = inst
+                        us.Parent          = inst
                     end
                 end)
             end
         end
 
-        -- B. Watermark AutomaticSize so text is never clipped.
+        -- B. Watermark AutomaticSize so long text is never clipped.
         for _, inst in ipairs(Library.ScreenGui:GetDescendants()) do
             if inst.Name and inst.Name:lower():find("watermark") then
                 pcall(function()
@@ -11097,39 +11102,12 @@ end
             end
         end
 
-        -- C. Sidebar (if SetTabLayout("Side") was called before CreateWindow)
-        --    or top-bar icon injection (if _iconsVisible is true).
-        local holder = Library.Window and Library.Window.Holder
-
-        if Library._tabLayout == "Side" and holder and #Library._orderedTabs > 0 then
-            _BuildSidebar(holder, Library._orderedTabs)
+        -- C. Apply sidebar if caller set Library:SetTabLayout("Side") before
+        --    CreateWindow, or apply top-bar icons if icons are on.
+        if Library._tabLayout == "Side" then
+            Library:ApplySidebarLayout()
         elseif Library._iconsVisible then
-            -- Top layout with icons: inject ImageLabel onto each tab button.
-            -- The TabButton is a Frame; its first TextLabel child is the name label.
-            for _, d in ipairs(Library._orderedTabs) do
-                local iconId = Library._tabIconData[d.tab]
-                if not iconId then continue end
-                pcall(function()
-                    -- d.tab.ButtonLabel is the TextLabel set in AddTab
-                    local lbl = d.tab.ButtonLabel
-                    if not lbl then return end
-                    local btn = lbl.Parent  -- TabButton Frame
-                    if not btn or btn:FindFirstChild("_StarlightIcon") then return end
-                    local img = Instance.new("ImageLabel")
-                    img.Name                   = "_StarlightIcon"
-                    img.BackgroundTransparency = 1
-                    img.Size                   = UDim2.fromOffset(14, 14)
-                    img.AnchorPoint            = Vector2.new(0, 0.5)
-                    img.Position               = UDim2.new(0, 4, 0.5, 0)
-                    img.Image                  = iconId
-                    img.ImageColor3            = Color3.fromRGB(161, 169, 225)
-                    img.ZIndex                 = lbl.ZIndex + 1
-                    img.Parent                 = btn
-                    -- Shift the label right to make room
-                    lbl.Position = UDim2.new(0, 22, 0, 0)
-                    lbl.Size     = UDim2.new(1, -22, 1, 0)
-                end)
-            end
+            Library:_ApplyTopBarIcons()
         end
     end)
 
@@ -11167,7 +11145,7 @@ local function OnTeamChange()
     if Library.Unloaded then
         return
     end
-    
+
     local TeamList = GetTeams(false)
     local StringTeamList = GetTeams(true)
 
@@ -11389,50 +11367,11 @@ end
 --  STARLIGHT ADDITIONS
 -- ════════════════════════════════════════════════════════════════════════════
 
--- ── Public API ───────────────────────────────────────────────────────────────
-
--- SetTabLayout("Side" | "Top")
--- Call BEFORE CreateWindow. "Side" enables the sidebar; "Top" keeps the
--- default horizontal tab bar.  Both sidebar AND icons default to OFF.
-function Library:SetTabLayout(layout)
-    Library._tabLayout = layout
-end
-
--- SetTabIconsVisible(bool)
--- Toggle icon visibility at runtime. Also updates sidebar icon labels live.
-function Library:SetTabIconsVisible(visible)
-    Library._iconsVisible = visible == true
-    for _, entry in ipairs(Library._sidebarButtons) do
-        if entry.iconLabel then
-            local hasImg = entry.iconLabel.Image ~= "" and entry.iconLabel.Image ~= nil
-            entry.iconLabel.Visible = visible and hasImg
-            if hasImg then
-                if visible then
-                    entry.nameLabel.Position = UDim2.new(0, 30, 0.5, 0)
-                    entry.nameLabel.Size     = UDim2.new(1, -36, 1, 0)
-                else
-                    entry.nameLabel.Position = UDim2.new(0, 8, 0.5, 0)
-                    entry.nameLabel.Size     = UDim2.new(1, -12, 1, 0)
-                end
-            end
-        end
-    end
-end
-
--- SetTabIconData(tabObj, "rbxassetid://NNN")
--- Call from your script after Window:AddTab() to attach a Nebula icon.
--- NebulaIcons:GetIcon() returns a number; prepend "rbxassetid://" yourself.
-function Library:SetTabIconData(tabObj, imageId)
-    if not tabObj then return end
-    Library._tabIconData[tabObj] = imageId
-end
-
--- ── Cursor hide + shift-lock sink ────────────────────────────────────────────
+-- ── Cursor hide + shift-lock key sink ─────────────────────────────────────────
 do
     local _CAS  = cloneref(game:GetService("ContextActionService"))
     local _SINK = "SnowFallStarlightSink"
     local _was  = false
-
     RunService.RenderStepped:Connect(function()
         local open = Library.Toggled == true
         if open then pcall(function() InputService.MouseIconEnabled = false end) end
@@ -11448,102 +11387,198 @@ do
             end
         end
     end)
-
-    local _origUnload = Library.Unload
+    local _ou = Library.Unload
     function Library:Unload()
         pcall(function() _CAS:UnbindAction(_SINK) end)
         pcall(function() InputService.MouseIconEnabled = true end)
-        _origUnload(self)
+        _ou(self)
     end
 end
 
--- ── Sidebar builder ───────────────────────────────────────────────────────────
-local function _BuildSidebar(holder, orderedTabs)
-    local SIDEBAR_W = 140
+-- ── Public API ────────────────────────────────────────────────────────────────
 
-    -- The main content frame sits directly inside the Outer window frame.
-    -- SnowFall's Inner frame (BackgroundColor3 = MainColor) is what we
-    -- need to push right. Find it by name since it's created with no Name
-    -- but is the first Frame child of Outer.
-    local innerFrame
-    for _, c in ipairs(holder:GetChildren()) do
-        if c:IsA("Frame") and c.Name ~= "StarlightSidebar" then
-            innerFrame = c; break
+function Library:SetTabLayout(layout)
+    Library._tabLayout = layout
+end
+
+-- SetTabIconData(tabObj, "rbxassetid://NNN")
+-- Call after Window:AddTab() with a resolved asset id.
+-- Immediately applies the icon wherever it is currently visible.
+function Library:SetTabIconData(tabObj, imageId)
+    if not tabObj then return end
+    Library._tabIconData[tabObj] = imageId
+
+    -- Update already-built sidebar button
+    for _, entry in ipairs(Library._sidebarButtons) do
+        if entry.tab == tabObj then
+            entry.iconLabel.Image   = imageId
+            entry.iconLabel.Visible = Library._iconsVisible
+            if Library._iconsVisible then
+                entry.nameLabel.Position = UDim2.new(0, 30, 0.5, 0)
+                entry.nameLabel.Size     = UDim2.new(1, -36, 1, 0)
+            end
         end
     end
-    if not innerFrame then return end
 
-    -- Build the sidebar frame
-    local sidebar = Instance.new("Frame")
-    sidebar.Name             = "StarlightSidebar"
-    sidebar.BackgroundColor3 = Color3.fromRGB(23, 25, 29)
-    sidebar.BorderSizePixel  = 0
-    sidebar.Size             = UDim2.new(0, SIDEBAR_W, 1, 0)
-    sidebar.Position         = UDim2.new(0, 0, 0, 0)
-    sidebar.ZIndex           = 5
-    sidebar.Parent           = holder
-    Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0, 6)
+    -- Apply to top-bar button if icons are enabled and no sidebar
+    if Library._iconsVisible and (not Library._sidebarFrame or not Library._sidebarFrame.Visible) then
+        Library:_ApplyTopBarIcon(tabObj, imageId)
+    end
+end
 
-    -- Thin divider on the right edge
-    local divider = Instance.new("Frame")
-    divider.BackgroundColor3 = Color3.fromRGB(44, 47, 54)
-    divider.BorderSizePixel  = 0
-    divider.Size             = UDim2.new(0, 1, 1, 0)
-    divider.Position         = UDim2.new(1, -1, 0, 0)
-    divider.ZIndex           = 6
-    divider.Parent           = sidebar
+-- SetTabIconsVisible(bool) — toggle icon visibility live
+function Library:SetTabIconsVisible(visible)
+    Library._iconsVisible = visible == true
 
+    -- Sidebar icons
+    for _, entry in ipairs(Library._sidebarButtons) do
+        local hasImg = entry.iconLabel.Image ~= "" and entry.iconLabel.Image ~= nil
+        entry.iconLabel.Visible = visible and hasImg
+        if hasImg then
+            entry.nameLabel.Position = visible and UDim2.new(0,30,0.5,0) or UDim2.new(0,8,0.5,0)
+            entry.nameLabel.Size     = visible and UDim2.new(1,-36,1,0)  or UDim2.new(1,-12,1,0)
+        end
+    end
+
+    -- Top-bar icons (only when sidebar is not active)
+    if not Library._sidebarFrame or not Library._sidebarFrame.Visible then
+        for _, d in ipairs(Library._orderedTabs) do
+            local lbl = d.tab.ButtonLabel
+            if not lbl then continue end
+            local btn = lbl.Parent
+            if not btn then continue end
+            local icon = btn:FindFirstChild("_StarlightIcon")
+            if visible then
+                if icon then
+                    icon.Visible     = true
+                    lbl.Position     = UDim2.new(0, 22, 0, 0)
+                    lbl.Size         = UDim2.new(1, -22, 1, 0)
+                elseif Library._tabIconData[d.tab] then
+                    Library:_ApplyTopBarIcon(d.tab, Library._tabIconData[d.tab])
+                end
+            else
+                if icon then
+                    icon.Visible = false
+                    lbl.Position = UDim2.new(0, 0, 0, 0)
+                    lbl.Size     = UDim2.new(1, 0, 1, -1)
+                end
+            end
+        end
+    end
+end
+
+-- Internal: attach one icon ImageLabel to a top-bar tab button
+function Library:_ApplyTopBarIcon(tabObj, imageId)
+    local lbl = tabObj.ButtonLabel
+    if not lbl then return end
+    local btn = lbl.Parent
+    if not btn then return end
+    local existing = btn:FindFirstChild("_StarlightIcon")
+    if existing then existing.Image = imageId; return end
+    local img = Instance.new("ImageLabel")
+    img.Name                   = "_StarlightIcon"
+    img.BackgroundTransparency = 1
+    img.Size                   = UDim2.fromOffset(14, 14)
+    img.AnchorPoint            = Vector2.new(0, 0.5)
+    img.Position               = UDim2.new(0, 4, 0.5, 0)
+    img.Image                  = imageId
+    img.ImageColor3            = Color3.fromRGB(161, 169, 225)
+    img.ZIndex                 = lbl.ZIndex + 1
+    img.Parent                 = btn
+    lbl.Position               = UDim2.new(0, 22, 0, 0)
+    lbl.Size                   = UDim2.new(1, -22, 1, 0)
+end
+
+function Library:_ApplyTopBarIcons()
+    for _, d in ipairs(Library._orderedTabs) do
+        local id = Library._tabIconData[d.tab]
+        if id then Library:_ApplyTopBarIcon(d.tab, id) end
+    end
+end
+
+-- ── Sidebar layout ────────────────────────────────────────────────────────────
+-- The sidebar lives inside MainSectionInner (stored as Library._MSI).
+-- TabArea is hidden; TabContainer is shifted right.
+-- Original TabContainer position/size are saved so RemoveSidebarLayout can
+-- restore them exactly.
+
+local _SIDEBAR_W = 140   -- sidebar width in pixels
+
+function Library:ApplySidebarLayout()
+    if #Library._orderedTabs == 0 then return end
+    local MSI = Library._MSI
+    local TabArea = Library._TabArea
+    local TC = Library._TabContainer
+    if not (MSI and TabArea and TC) then return end
+
+    -- Hide the horizontal tab bar
+    TabArea.Visible = false
+
+    -- Shift the content area to the right of the sidebar.
+    -- Save originals once so repeated toggles don't drift.
+    if not Library._origTCPos then
+        Library._origTCPos  = TC.Position
+        Library._origTCSize = TC.Size
+    end
+    TC.Position = UDim2.new(0, _SIDEBAR_W + 4, 0, 4)
+    TC.Size     = UDim2.new(1, -(_SIDEBAR_W + 12), 1, -12)
+
+    if Library._sidebarFrame then
+        Library._sidebarFrame.Visible = true
+        return
+    end
+
+    -- Build the sidebar frame directly in MainSectionInner
+    local sb = Instance.new("Frame")
+    sb.Name             = "StarlightSidebar"
+    sb.BackgroundColor3 = Color3.fromRGB(23, 25, 29)
+    sb.BorderSizePixel  = 0
+    sb.Position         = UDim2.new(0, 0, 0, 0)
+    sb.Size             = UDim2.new(0, _SIDEBAR_W, 1, 0)
+    sb.ZIndex           = 10
+    sb.Parent           = MSI
+    Instance.new("UICorner", sb).CornerRadius = UDim.new(0, 6)
+
+    -- Right-edge accent line
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = Color3.fromRGB(44, 47, 54)
+    line.BorderSizePixel  = 0
+    line.Position         = UDim2.new(1, -1, 0, 0)
+    line.Size             = UDim2.new(0, 1, 1, 0)
+    line.ZIndex           = 11
+    line.Parent           = sb
+
+    -- Layout
     local ll = Instance.new("UIListLayout")
     ll.FillDirection       = Enum.FillDirection.Vertical
     ll.HorizontalAlignment = Enum.HorizontalAlignment.Center
     ll.SortOrder           = Enum.SortOrder.LayoutOrder
     ll.Padding             = UDim.new(0, 4)
-    ll.Parent              = sidebar
+    ll.Parent              = sb
 
     local pad = Instance.new("UIPadding")
     pad.PaddingTop   = UDim.new(0, 8)
     pad.PaddingLeft  = UDim.new(0, 6)
     pad.PaddingRight = UDim.new(0, 6)
-    pad.Parent       = sidebar
-
-    -- Push the window content to the right
-    innerFrame.Position = UDim2.new(0, SIDEBAR_W, 0, 0)
-    innerFrame.Size     = UDim2.new(1, -SIDEBAR_W, 1, 0)
-
-    -- Hide all the original top-bar tab buttons by making the TabArea invisible
-    -- We find TabArea inside the Inner→MainSectionOuter→MainSectionInner chain
-    local function hideTopTabs()
-        -- Walk: Inner → MainSectionOuter → MainSectionInner → TabArea (ScrollingFrame)
-        local Inner = innerFrame:FindFirstChildWhichIsA("Frame")
-        if not Inner then return end
-        local MSO = Inner:FindFirstChildWhichIsA("Frame")
-        if not MSO then return end
-        local MSI = MSO:FindFirstChildWhichIsA("Frame")
-        if not MSI then return end
-        for _, c in ipairs(MSI:GetChildren()) do
-            if c:IsA("ScrollingFrame") then c.Visible = false break end
-        end
-    end
-    hideTopTabs()
+    pad.Parent       = sb
 
     Library._sidebarButtons = {}
 
     local function SetActive(entry, active)
         entry.button.BackgroundTransparency = active and 0 or 0.4
-        entry.button.BackgroundColor3       = active and Color3.fromRGB(44,47,60) or Color3.fromRGB(27,29,33)
-        entry.nameLabel.TextColor3          = active and Color3.fromRGB(255,255,255) or Color3.fromRGB(165,165,165)
-        if entry.iconLabel then
-            entry.iconLabel.ImageColor3 = active and Color3.fromRGB(161,169,225) or Color3.fromRGB(100,103,130)
-        end
+        entry.button.BackgroundColor3 = active
+            and Color3.fromRGB(44, 47, 60) or Color3.fromRGB(27, 29, 33)
+        entry.nameLabel.TextColor3 = active
+            and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(165, 165, 165)
+        entry.iconLabel.ImageColor3 = active
+            and Color3.fromRGB(161, 169, 225) or Color3.fromRGB(100, 103, 130)
     end
 
-    for i, d in ipairs(orderedTabs) do
-        local iconId  = Library._tabIconData[d.tab]
-        local hasIcon = iconId ~= nil and iconId ~= ""
-        local showIcon = hasIcon and Library._iconsVisible
+    for i, d in ipairs(Library._orderedTabs) do
+        local iconId   = Library._tabIconData[d.tab]
+        local showIcon = iconId ~= nil and Library._iconsVisible
 
         local btn = Instance.new("TextButton")
-        btn.Name                   = "SideTab_" .. i
         btn.BackgroundColor3       = Color3.fromRGB(27, 29, 33)
         btn.BackgroundTransparency = 0.4
         btn.BorderSizePixel        = 0
@@ -11551,41 +11586,43 @@ local function _BuildSidebar(holder, orderedTabs)
         btn.Text                   = ""
         btn.AutoButtonColor        = false
         btn.LayoutOrder            = i
-        btn.ZIndex                 = 7
-        btn.Parent                 = sidebar
+        btn.ZIndex                 = 12
+        btn.Parent                 = sb
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 5)
 
-        local iconLbl = Instance.new("ImageLabel")
-        iconLbl.BackgroundTransparency = 1
-        iconLbl.Size                   = UDim2.fromOffset(16, 16)
-        iconLbl.AnchorPoint            = Vector2.new(0, 0.5)
-        iconLbl.Position               = UDim2.new(0, 8, 0.5, 0)
-        iconLbl.ImageColor3            = Color3.fromRGB(100, 103, 130)
-        iconLbl.ZIndex                 = 8
-        iconLbl.Visible                = showIcon
-        if hasIcon then iconLbl.Image  = iconId end
-        iconLbl.Parent                 = btn
+        local ico = Instance.new("ImageLabel")
+        ico.BackgroundTransparency = 1
+        ico.AnchorPoint            = Vector2.new(0, 0.5)
+        ico.Position               = UDim2.new(0, 8, 0.5, 0)
+        ico.Size                   = UDim2.fromOffset(16, 16)
+        ico.ImageColor3            = Color3.fromRGB(100, 103, 130)
+        ico.ZIndex                 = 13
+        ico.Visible                = showIcon
+        ico.Image                  = iconId or ""
+        ico.Parent                 = btn
 
-        local nameLbl = Instance.new("TextLabel")
-        nameLbl.BackgroundTransparency = 1
-        nameLbl.Font           = Enum.Font.Gotham
-        nameLbl.TextColor3     = Color3.fromRGB(165, 165, 165)
-        nameLbl.TextSize       = 13
-        nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-        nameLbl.TextTruncate   = Enum.TextTruncate.AtEnd
-        nameLbl.ZIndex         = 8
-        nameLbl.Text           = d.name
-        nameLbl.AnchorPoint    = Vector2.new(0, 0.5)
-        nameLbl.Position       = showIcon and UDim2.new(0, 30, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
-        nameLbl.Size           = showIcon and UDim2.new(1, -36, 1, 0)  or UDim2.new(1, -12, 1, 0)
-        nameLbl.Parent         = btn
+        local nm = Instance.new("TextLabel")
+        nm.BackgroundTransparency = 1
+        nm.Font                   = Enum.Font.Gotham
+        nm.TextColor3             = Color3.fromRGB(165, 165, 165)
+        nm.TextSize               = 13
+        nm.TextXAlignment         = Enum.TextXAlignment.Left
+        nm.TextTruncate           = Enum.TextTruncate.AtEnd
+        nm.ZIndex                 = 13
+        nm.Text                   = d.name
+        nm.AnchorPoint            = Vector2.new(0, 0.5)
+        nm.Position               = showIcon and UDim2.new(0,30,0.5,0) or UDim2.new(0,8,0.5,0)
+        nm.Size                   = showIcon and UDim2.new(1,-36,1,0)  or UDim2.new(1,-12,1,0)
+        nm.Parent                 = btn
 
-        local entry = { button=btn, iconLabel=iconLbl, nameLabel=nameLbl, tab=d.tab }
+        local entry = { button=btn, iconLabel=ico, nameLabel=nm, tab=d.tab }
         table.insert(Library._sidebarButtons, entry)
 
         btn.MouseButton1Click:Connect(function()
             pcall(function() d.tab:ShowTab() end)
-            for _, e in ipairs(Library._sidebarButtons) do SetActive(e, e.tab == d.tab) end
+            for _, e in ipairs(Library._sidebarButtons) do
+                SetActive(e, e.tab == d.tab)
+            end
         end)
         btn.MouseEnter:Connect(function()
             if btn.BackgroundTransparency > 0 then btn.BackgroundTransparency = 0.2 end
@@ -11595,8 +11632,28 @@ local function _BuildSidebar(holder, orderedTabs)
         end)
     end
 
-    if Library._sidebarButtons[1] then SetActive(Library._sidebarButtons[1], true) end
-    Library._sidebarFrame = sidebar
+    if Library._sidebarButtons[1] then
+        SetActive(Library._sidebarButtons[1], true)
+    end
+    Library._sidebarFrame = sb
+end
+
+function Library:RemoveSidebarLayout()
+    local TabArea = Library._TabArea
+    local TC      = Library._TabContainer
+
+    if Library._sidebarFrame then
+        Library._sidebarFrame.Visible = false
+    end
+    if TabArea then TabArea.Visible = true end
+    if TC and Library._origTCPos then
+        TC.Position = Library._origTCPos
+        TC.Size     = Library._origTCSize
+    elseif TC then
+        -- safe fallback to SnowFall defaults
+        TC.Position = UDim2.new(0, 8,  0, 30)
+        TC.Size     = UDim2.new(1, -16, 1, -38)
+    end
 end
 
 
