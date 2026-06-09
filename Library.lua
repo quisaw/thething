@@ -3021,6 +3021,106 @@ do
                 end
             end
 
+            -- ── Add copy / paste / rainbow row (only once) ──────────────────
+            if not PickerFrameInner:FindFirstChild("_sl_cpButtons") then
+                local rowH = 22
+                local rowY = PickerFrameOuter.Size.Y.Offset - 2
+                PickerFrameOuter.Size = UDim2.fromOffset(
+                    PickerFrameOuter.Size.X.Offset,
+                    rowY + rowH + 4)
+
+                local row = Instance.new("Frame")
+                row.Name = "_sl_cpButtons"; row.BackgroundTransparency=1; row.BorderSizePixel=0
+                row.Position = UDim2.fromOffset(4, rowY)
+                row.Size     = UDim2.new(1,-8,0,rowH)
+                row.ZIndex   = 20; row.Parent = PickerFrameInner
+                local rll = Instance.new("UIListLayout")
+                rll.FillDirection=Enum.FillDirection.Horizontal; rll.Padding=UDim.new(0,4)
+                rll.HorizontalAlignment=Enum.HorizontalAlignment.Left
+                rll.VerticalAlignment=Enum.VerticalAlignment.Center
+                rll.Parent=row
+
+                local function mkBtn(label, cb)
+                    local b = Instance.new("TextButton")
+                    b.BackgroundColor3=Library.MainColor; b.BorderColor3=Library.OutlineColor
+                    b.BorderMode=Enum.BorderMode.Inset; b.AutomaticSize=Enum.AutomaticSize.X
+                    b.Size=UDim2.new(0,0,1,0); b.Text="  "..label.."  "
+                    b.Font=Library.Font; b.TextSize=12; b.TextColor3=Library.FontColor
+                    b.ZIndex=21; b.AutoButtonColor=false; b.Parent=row
+                    b.MouseButton1Click:Connect(cb)
+                    b.MouseEnter:Connect(function() b.BackgroundColor3=Library.AccentColor end)
+                    b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
+                    return b
+                end
+
+                -- Copy: puts current color as hex on clipboard
+                mkBtn("Copy", function()
+                    local r = math.floor(Color3.fromHSV(ColorPicker.Hue,ColorPicker.Sat,ColorPicker.Vib).R*255+0.5)
+                    local g = math.floor(Color3.fromHSV(ColorPicker.Hue,ColorPicker.Sat,ColorPicker.Vib).G*255+0.5)
+                    local b = math.floor(Color3.fromHSV(ColorPicker.Hue,ColorPicker.Sat,ColorPicker.Vib).B*255+0.5)
+                    pcall(function() setclipboard(string.format("#%02X%02X%02X",r,g,b)) end)
+                end)
+
+                -- Paste: reads hex from clipboard and applies
+                mkBtn("Paste", function()
+                    pcall(function()
+                        local clip = getclipboard and getclipboard() or ""
+                        local ok, c = pcall(Color3.fromHex, clip:match("#?([%x]+)") or "")
+                        if ok and c then ColorPicker:SetValueRGB(c) end
+                    end)
+                end)
+
+                -- Rainbow: cycles hue automatically
+                local rainbowActive = false
+                local rainbowConn   = nil
+                local rainbowSpeed  = 0.003   -- hue units per frame
+                local rbBtn = mkBtn("Rainbow: Off", function() end)
+                rbBtn.MouseButton1Click:Connect(function()
+                    rainbowActive = not rainbowActive
+                    rbBtn.Text = "  Rainbow: " .. (rainbowActive and "On " or "Off") .. "  "
+                    if rainbowActive then
+                        rainbowConn = RunService.RenderStepped:Connect(function()
+                            ColorPicker.Hue = (ColorPicker.Hue + rainbowSpeed) % 1
+                            ColorPicker:Display()
+                            RunCallback()
+                        end)
+                    else
+                        if rainbowConn then rainbowConn:Disconnect(); rainbowConn=nil end
+                    end
+                end)
+
+                -- Speed slider (small, inline)
+                local speedLbl = Library:CreateLabel({
+                    Size=UDim2.fromOffset(0,rowH); AutomaticSize=Enum.AutomaticSize.X;
+                    TextSize=11; Text=" Spd:"; ZIndex=21; Parent=row;
+                })
+                local speedSliderFrame = Instance.new("Frame")
+                speedSliderFrame.BackgroundColor3=Library.MainColor; speedSliderFrame.BorderColor3=Library.OutlineColor
+                speedSliderFrame.BorderMode=Enum.BorderMode.Inset
+                speedSliderFrame.Size=UDim2.fromOffset(36,rowH-4)
+                speedSliderFrame.ZIndex=21; speedSliderFrame.Parent=row
+                local speedFill = Instance.new("Frame")
+                speedFill.BackgroundColor3=Library.AccentColor; speedFill.BorderSizePixel=0
+                speedFill.Size=UDim2.new(0.5,0,1,0); speedFill.ZIndex=22; speedFill.Parent=speedSliderFrame
+                speedSliderFrame.InputBegan:Connect(function(inp)
+                    if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+                    while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                        local frac=math.clamp((Mouse.X-speedSliderFrame.AbsolutePosition.X)/speedSliderFrame.AbsoluteSize.X,0,1)
+                        speedFill.Size=UDim2.new(frac,0,1,0)
+                        rainbowSpeed = 0.0002 + frac * 0.015
+                        RunService.RenderStepped:Wait()
+                    end
+                end)
+
+                -- Stop rainbow when picker closes
+                local _origHide = ColorPicker.Hide
+                function ColorPicker:Hide()
+                    if rainbowConn then rainbowConn:Disconnect(); rainbowConn=nil end
+                    rainbowActive=false; rbBtn.Text="  Rainbow: Off  "
+                    _origHide(self)
+                end
+            end
+
             PickerFrameOuter.Visible = true
             Library.OpenedFrames[PickerFrameOuter] = true
         end
@@ -5439,7 +5539,49 @@ do
         end
 
         SliderInner.InputBegan:Connect(function(Input)
-            if Slider.Disabled then
+            if Slider.Disabled then return end
+
+            -- Ctrl + click: open a numeric input overlay
+            if Input.UserInputType == Enum.UserInputType.MouseButton1
+               and InputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                local prevVal = Slider.Value
+                local overlay = Instance.new("TextBox")
+                overlay.BackgroundColor3 = Library.MainColor
+                overlay.BorderColor3     = Library.AccentColor
+                overlay.BorderMode       = Enum.BorderMode.Inset
+                overlay.Size             = UDim2.new(1, 0, 1, 0)
+                overlay.Text             = tostring(Slider.Value)
+                overlay.TextColor3       = Color3.fromRGB(255, 255, 255)
+                overlay.Font             = Library.Font
+                overlay.TextSize         = 13
+                overlay.ClearTextOnFocus = true
+                overlay.ZIndex           = SliderInner.ZIndex + 10
+                overlay.Parent           = SliderInner
+                overlay:CaptureFocus()
+                overlay.FocusLost:Connect(function(enterPressed)
+                    pcall(function() overlay:Destroy() end)
+                    if not enterPressed then return end
+                    local num = tonumber(overlay.Text)
+                    if num then
+                        local clamped = math.clamp(num, Slider.Min, Slider.Max)
+                        -- Round to Slider.Rounding
+                        if Slider.Rounding == 0 then
+                            clamped = math.floor(clamped + 0.5)
+                        else
+                            clamped = tonumber(string.format("%." .. Slider.Rounding .. "f", clamped))
+                        end
+                        -- Reject out-of-bounds
+                        if clamped < Slider.Min or clamped > Slider.Max then
+                            Slider.Value = prevVal
+                        else
+                            Slider.Value = clamped
+                        end
+                        Slider:Display()
+                        Library:SafeCallback(Slider.Callback, Slider.Value)
+                        Library:SafeCallback(Slider.Changed, Slider.Value)
+                        Library:AttemptSave()
+                    end
+                end)
                 return
             end
 
@@ -9107,7 +9249,8 @@ function Library:CreateWindow(...)
             or _tbTextW
 
         local TabButton = Library:Create("Frame", {
-            BackgroundColor3 = Library.BackgroundColor;
+            BackgroundColor3 = Library.MainColor;
+            BackgroundTransparency = 1;  -- indicator slides under text to show active state
             BorderColor3 = Library.OutlineColor;
             Size = UDim2.new(0, TabButtonWidth + 8 + 4 + _iconExtra, 0.85, 0);
             ZIndex = 1;
@@ -9415,37 +9558,38 @@ end
             end
 
             Blocker.BackgroundTransparency = 0
-            TabButton.BackgroundColor3 = Library.MainColor
-            Library.RegistryMap[TabButton].Properties.BackgroundColor3 = "MainColor"
             TabHighlight.Visible = false  -- shared sliding indicator replaces per-tab highlight
 
             -- Slide shared indicator to this tab button (skipped in sidebar mode)
+            -- The indicator IS the tab background; TabButton is transparent.
             pcall(function()
+                local msi = Library._MSI   -- parent of TabArea, supports absolute positioning
+                if not msi then return end
                 local ta = Library._TabArea
                 if not (ta and ta.Visible) then return end
-                -- Create shared indicator on first use
                 if not Library._tabIndicator then
                     local ind = Instance.new("Frame")
-                    ind.BackgroundColor3 = Library.AccentColor
-                    ind.BorderSizePixel  = 0
-                    ind.Size             = UDim2.fromOffset(10, 2)
-                    ind.ZIndex           = 6
-                    ind.Parent           = ta
-                    Library:AddToRegistry(ind, { BackgroundColor3 = "AccentColor" })
-                    Library._tabIndicator = ind
+                    ind.BackgroundColor3    = Library.MainColor
+                    ind.BackgroundTransparency = 0
+                    ind.BorderSizePixel     = 0
+                    ind.Size                = UDim2.fromOffset(10, 10)
+                    ind.ZIndex              = 0   -- behind tab content
+                    ind.Parent              = msi
+                    Library:AddToRegistry(ind, { BackgroundColor3 = "MainColor" })
+                    Library._tabIndicator   = ind
                 end
-                local ind = Library._tabIndicator
-                local taAbs  = ta.AbsolutePosition
+                local ind    = Library._tabIndicator
+                local msiAbs = msi.AbsolutePosition
                 local btnPos = TabButton.AbsolutePosition
                 local btnSz  = TabButton.AbsoluteSize
-                if btnSz.X == 0 then return end  -- not laid out yet
-                local targetPos  = UDim2.fromOffset(btnPos.X - taAbs.X, btnPos.Y - taAbs.Y + btnSz.Y - 2)
-                local targetSize = UDim2.fromOffset(btnSz.X, 2)
+                if btnSz.X == 0 then return end
+                local tPos = UDim2.fromOffset(btnPos.X - msiAbs.X, btnPos.Y - msiAbs.Y)
+                local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
                 if not ind.Visible then
-                    ind.Position = targetPos; ind.Size = targetSize; ind.Visible = true
+                    ind.Position = tPos; ind.Size = tSz; ind.Visible = true
                 else
                     TweenService:Create(ind, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        { Position = targetPos, Size = targetSize }):Play()
+                        { Position = tPos, Size = tSz }):Play()
                 end
             end)
 
@@ -9480,8 +9624,7 @@ end
 
         function Tab:HideTab()
             Blocker.BackgroundTransparency = 1
-            TabButton.BackgroundColor3 = Library.BackgroundColor
-            Library.RegistryMap[TabButton].Properties.BackgroundColor3 = "BackgroundColor"
+            -- Background handled by shared indicator; just dim text
             TabHighlight.Visible = false
             TabFrame.Visible = false
         end
@@ -10074,27 +10217,29 @@ end
 
                 -- Slide per-tab sub-indicator to this sub-tab button
                 pcall(function()
-                    local subBar = SubBtn.Parent  -- the sub-tab button container
+                    local subBar = SubBtn.Parent
                     if not subBar then return end
                     local key = tostring(Tab) .. "_subind"
                     if not Library._subTabIndicators then Library._subTabIndicators = {} end
                     if not Library._subTabIndicators[key] then
                         local si = Instance.new("Frame")
-                        si.BackgroundColor3 = Library.AccentColor
-                        si.BorderSizePixel  = 0
-                        si.Size             = UDim2.fromOffset(10, 2)
-                        si.ZIndex           = 10
-                        si.Parent           = subBar
-                        Library:AddToRegistry(si, { BackgroundColor3 = "AccentColor" })
+                        si.BackgroundColor3    = Library.MainColor
+                        si.BackgroundTransparency = 0
+                        si.BorderSizePixel     = 0
+                        si.Size                = UDim2.fromOffset(10, 10)
+                        si.ZIndex              = 0
+                        si.Parent              = subBar.Parent or subBar
+                        Library:AddToRegistry(si, { BackgroundColor3 = "MainColor" })
                         Library._subTabIndicators[key] = si
                     end
                     local si     = Library._subTabIndicators[key]
-                    local barAbs = subBar.AbsolutePosition
+                    local par    = si.Parent
+                    local parAbs = par.AbsolutePosition
                     local btnPos = SubBtn.AbsolutePosition
                     local btnSz  = SubBtn.AbsoluteSize
                     if btnSz.X == 0 then return end
-                    local tPos = UDim2.fromOffset(btnPos.X - barAbs.X, btnPos.Y - barAbs.Y + btnSz.Y - 2)
-                    local tSz  = UDim2.fromOffset(btnSz.X, 2)
+                    local tPos = UDim2.fromOffset(btnPos.X - parAbs.X, btnPos.Y - parAbs.Y)
+                    local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
                     if not si.Visible then
                         si.Position = tPos; si.Size = tSz; si.Visible = true
                     else
@@ -11928,11 +12073,40 @@ function Library:ApplySidebarLayout()
     pad.Parent=tabInner
 
     Library._sidebarButtons={}
+    -- Sidebar indicator handles button background; we only tween text/icon colors.
+    if not Library._sbIndicator and Library._MSI then
+        local si = Instance.new("Frame")
+        si.BackgroundColor3    = Library.MainColor
+        si.BackgroundTransparency = 0
+        si.BorderSizePixel     = 0
+        si.Size                = UDim2.fromOffset(10, 32)
+        si.ZIndex              = 9
+        Library:AddToRegistry(si, { BackgroundColor3 = "MainColor" })
+        Library._sbIndicator = si
+    end
+
     local function SetActive(e,a)
-        e.button.BackgroundTransparency=a and 0 or 0.4
-        e.button.BackgroundColor3=a and Color3.fromRGB(44,47,60) or Color3.fromRGB(27,29,33)
+        e.button.BackgroundTransparency = 1   -- indicator handles background
+        e.button.BackgroundColor3 = Color3.fromRGB(27,29,33)
         e.nameLabel.TextColor3=a and Color3.fromRGB(255,255,255) or Color3.fromRGB(165,165,165)
         e.iconLabel.ImageColor3=a and Color3.fromRGB(161,169,225) or Color3.fromRGB(100,103,130)
+        if a and Library._sbIndicator then
+            local si = Library._sbIndicator
+            si.Parent = e.button.Parent
+            local parAbs = si.Parent.AbsolutePosition
+            local btnPos = e.button.AbsolutePosition
+            local btnSz  = e.button.AbsoluteSize
+            if btnSz.X > 0 then
+                local tPos = UDim2.fromOffset(btnPos.X - parAbs.X, btnPos.Y - parAbs.Y)
+                local tSz  = UDim2.fromOffset(btnSz.X, btnSz.Y)
+                if not si.Visible then
+                    si.Position=tPos; si.Size=tSz; si.Visible=true
+                else
+                    TweenService:Create(si,TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),
+                        {Position=tPos,Size=tSz}):Play()
+                end
+            end
+        end
     end
     for i,d in ipairs(Library._orderedTabs) do
         if Library._hiddenTabs[d.tab] then continue end
@@ -12539,7 +12713,14 @@ function Library:_RebuildKeybindList()
     local shouldShow = (vis > 0) and Library._keybindListVisible ~= false
     local wasShowing = Library._kbListShowing
     if shouldShow == wasShowing then return end
-    Library._kbListShowing = shouldShow
+
+    -- Debounce: must remain stable for 0.3 s before triggering a transition.
+    -- This stops rapid flicker when pressing unbound keys fleetingly.
+    Library._kbPendingShow = shouldShow
+    task.delay(0.3, function()
+        if Library._kbPendingShow ~= shouldShow then return end
+        if Library._kbListShowing == shouldShow then return end
+        Library._kbListShowing = shouldShow
 
     if shouldShow then
         -- Fade in
@@ -12568,6 +12749,7 @@ function Library:_RebuildKeybindList()
             if not Library._kbListShowing then kf.Visible = false end
         end)
     end
+    end)  -- end task.delay debounce
 end
 
 Library._kbListShowing    = false
