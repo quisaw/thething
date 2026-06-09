@@ -3455,6 +3455,10 @@ do
             BackgroundColor3 = "MainColor";
             BorderColor3 = "OutlineColor";
         })
+        DropdownOuter.BorderSizePixel = 0
+        Instance.new("UICorner", DropdownOuter).CornerRadius = UDim.new(0, 4)
+        DropdownInner.BorderSizePixel = 0
+        Instance.new("UICorner", DropdownInner).CornerRadius = UDim.new(0, 4)
 
         Library:Create("UIGradient", {
             Color = ColorSequence.new({
@@ -4349,11 +4353,14 @@ do
             Library:AddToRegistry(Outer, {
                 BorderColor3 = "Black";
             })
-
             Library:AddToRegistry(Inner, {
                 BackgroundColor3 = "MainColor";
                 BorderColor3 = "OutlineColor";
             })
+            Outer.BorderSizePixel = 0
+            Instance.new("UICorner", Outer).CornerRadius = UDim.new(0, 4)
+            Inner.BorderSizePixel = 0
+            Instance.new("UICorner", Inner).CornerRadius = UDim.new(0, 4)
 
             Library:OnHighlight(Outer, Outer,
                 { BorderColor3 = "AccentColor" },
@@ -5390,12 +5397,19 @@ do
                     local currScale  = Library:MapValue(Slider.Value, Slider.Min, Slider.Max, 0, 1)
                     local currXOff   = currScale * Slider.MaxSize
 
-                    -- Interpolation alpha: proportional to distance so farther = faster.
-                    -- Clamped so the slider can never take more than ~0.4 s to reach the target.
-                    local distFrac  = math.abs(targetXOff - currXOff) / math.max(Slider.MaxSize, 1)
-                    local alpha     = math.clamp(distFrac * 3, 0.18, 0.85)
-
-                    local smoothXOff = currXOff + (targetXOff - currXOff) * alpha
+                    -- Smooth interpolation: alpha scales with distance.
+                    -- Max alpha = 0.35 → far moves take ~10 frames (0.17 s at 60 fps).
+                    -- Min alpha = 0.08 → tiny adjustments take ~55 frames (0.9 s).
+                    -- Snap to target when within 0.5 px to guarantee min/max is reachable.
+                    local dist     = math.abs(targetXOff - currXOff)
+                    local distFrac = dist / math.max(Slider.MaxSize, 1)
+                    local smoothXOff
+                    if dist < 0.5 then
+                        smoothXOff = targetXOff  -- snap: ensures 0 and Max are always reachable
+                    else
+                        local alpha  = math.clamp(distFrac * 2.5, 0.08, 0.35)
+                        smoothXOff   = currXOff + (targetXOff - currXOff) * alpha
+                    end
                     local nXScale    = Library:MapValue(smoothXOff, 0, Slider.MaxSize, 0, 1)
 
                     local nValue = Slider:GetValueFromXScale(nXScale)
@@ -5499,6 +5513,8 @@ do
             end)
 
             Library:AddToRegistry(SubSliderOuter, { BorderColor3 = "Black" })
+            SubSliderOuter.BorderSizePixel = 0
+            Instance.new("UICorner", SubSliderOuter).CornerRadius = UDim.new(0, 4)
 
             local SubSliderInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.MainColor;
@@ -5509,6 +5525,8 @@ do
                 Parent           = SubSliderOuter;
             })
             Library:AddToRegistry(SubSliderInner, { BackgroundColor3 = "MainColor"; BorderColor3 = "OutlineColor" })
+            SubSliderInner.BorderSizePixel = 0
+            Instance.new("UICorner", SubSliderInner).CornerRadius = UDim.new(0, 4)
 
             local SubFill = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
@@ -11703,14 +11721,19 @@ function Library:ApplySidebarLayout()
     line.BorderSizePixel=0; line.Position=UDim2.new(0,curW,0,0); line.Size=UDim2.new(0,1,1,0)
     line.ZIndex=10; line.Parent=MSI; Library._sidebarLine=line
 
-    -- Reserve 44 px at the bottom for the home-tab icon button
+    -- Tab-buttons live in a dedicated inner frame so the home button
+    -- can be positioned ABSOLUTELY at the bottom without UIListLayout interfering.
+    local tabInner = Instance.new("Frame")
+    tabInner.BackgroundTransparency=1; tabInner.BorderSizePixel=0
+    tabInner.Size=UDim2.new(1,0,1,-44)   -- leave 44 px at bottom for home btn
+    tabInner.ZIndex=10; tabInner.Parent=sb
+
     local ll=Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.HorizontalAlignment=Enum.HorizontalAlignment.Center; ll.VerticalAlignment=Enum.VerticalAlignment.Top
-    ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,4); ll.Parent=sb
+    ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,4); ll.Parent=tabInner
     local pad=Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0,8)
-    pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6)
-    pad.PaddingBottom=UDim.new(0,44)  -- room for the home button at the bottom
-    pad.Parent=sb
+    pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6); pad.PaddingBottom=UDim.new(0,4)
+    pad.Parent=tabInner
 
     Library._sidebarButtons={}
     local function SetActive(e,a)
@@ -11724,7 +11747,7 @@ function Library:ApplySidebarLayout()
         local iconId=Library._tabIconData[d.tab]; local showIcon=iconId~=nil and Library._iconsVisible
         local btn=Instance.new("TextButton"); btn.BackgroundColor3=Color3.fromRGB(27,29,33)
         btn.BackgroundTransparency=0.4; btn.BorderSizePixel=0; btn.Size=UDim2.new(1,0,0,32)
-        btn.Text=""; btn.AutoButtonColor=false; btn.LayoutOrder=i; btn.ZIndex=12; btn.Parent=sb
+        btn.Text=""; btn.AutoButtonColor=false; btn.LayoutOrder=i; btn.ZIndex=12; btn.Parent=tabInner
         Instance.new("UICorner",btn).CornerRadius=UDim.new(0,5)
         local ico=Instance.new("ImageLabel"); ico.BackgroundTransparency=1
         -- Icon position: centred when names are hidden, left-aligned otherwise
@@ -11750,35 +11773,80 @@ function Library:ApplySidebarLayout()
     end
     if Library._sidebarButtons[1] then SetActive(Library._sidebarButtons[1],true) end
 
-    -- ── Home button pinned at bottom-left of sidebar ───────────────────────
-    -- Thin divider above the home button
+    -- ── Home button pinned at BOTTOM of sidebar ────────────────────────────
+    -- Thin divider above the home button area
     local homeDiv = Instance.new("Frame")
     homeDiv.BackgroundColor3=Color3.fromRGB(44,47,54); homeDiv.BorderSizePixel=0
-    homeDiv.Size=UDim2.new(1,-12,0,1); homeDiv.Position=UDim2.new(0,6,1,-40)
+    homeDiv.Size=UDim2.new(1,-12,0,1); homeDiv.Position=UDim2.new(0,6,1,-42)
     homeDiv.ZIndex=11; homeDiv.Parent=sb
 
-    local homeBtnSz = 28   -- slightly larger than the title-bar variant
+    -- HOME BUTTON: absolutely positioned at the bottom of sb (no UIListLayout here)
+    local homeBtnSz = 28
     task.defer(function()
         local icon = Library:GetIcon("app-window-mac")
         if not icon then return end
         for _,d in ipairs(Library._orderedTabs) do
             if not Library._hiddenTabs[d.tab] then continue end
+
             local hBtn = Instance.new("ImageButton")
-            hBtn.Name="SidebarHomeBtn"; hBtn.BackgroundColor3=Library.BackgroundColor
-            hBtn.BackgroundTransparency=0; hBtn.BorderSizePixel=0; hBtn.AutoButtonColor=false
-            hBtn.AnchorPoint=Vector2.new(0.5,1)
-            hBtn.Position=UDim2.new(0.5,0,1,-6)   -- centred at the bottom, 6 px gap
-            hBtn.Size=UDim2.fromOffset(homeBtnSz,homeBtnSz)
-            hBtn.Image=icon.Url; hBtn.ImageRectOffset=icon.ImageRectOffset
-            hBtn.ImageRectSize=icon.ImageRectSize; hBtn.ImageColor3=Color3.fromRGB(161,169,225)
-            hBtn.ZIndex=12; hBtn.Parent=sb
+            hBtn.Name="SidebarHomeBtn"
+            -- Default state: same as an "active" sidebar button — selected background, no border
+            hBtn.BackgroundColor3       = Color3.fromRGB(44,47,60)
+            hBtn.BackgroundTransparency = 0
+            hBtn.BorderSizePixel        = 0
+            hBtn.AutoButtonColor        = false
+            hBtn.AnchorPoint            = Vector2.new(0.5, 1)
+            hBtn.Position               = UDim2.new(0.5, 0, 1, -6)  -- bottom-centre of sb
+            hBtn.Size                   = UDim2.fromOffset(homeBtnSz, homeBtnSz)
+            hBtn.Image                  = icon.Url
+            hBtn.ImageRectOffset        = icon.ImageRectOffset
+            hBtn.ImageRectSize          = icon.ImageRectSize
+            hBtn.ImageColor3            = Color3.fromRGB(161,169,225)
+            hBtn.ZIndex                 = 12
+            hBtn.Parent                 = sb   -- direct child of sb → absolutely positioned
             Instance.new("UICorner",hBtn).CornerRadius=UDim.new(0,4)
-            local hStroke=Instance.new("UIStroke"); hStroke.Color=Library.OutlineColor
-            hStroke.Thickness=1; hStroke.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; hStroke.Parent=hBtn
-            hBtn.MouseButton1Click:Connect(function() pcall(function() d.tab:ShowTab() end) end)
-            hBtn.MouseEnter:Connect(function() hBtn.ImageColor3=Color3.fromRGB(255,255,255) end)
-            hBtn.MouseLeave:Connect(function() hBtn.ImageColor3=Color3.fromRGB(161,169,225) end)
-            break  -- only the first hidden tab gets a button
+
+            -- Make all regular sidebar buttons inactive when home tab is shown
+            local function homeTabSelected()
+                hBtn.BackgroundColor3 = Color3.fromRGB(44,47,60)
+                hBtn.ImageColor3      = Color3.fromRGB(161,169,225)
+                for _,e in ipairs(Library._sidebarButtons) do
+                    e.button.BackgroundTransparency = 0.4
+                    e.button.BackgroundColor3       = Color3.fromRGB(27,29,33)
+                    e.nameLabel.TextColor3          = Color3.fromRGB(165,165,165)
+                    e.iconLabel.ImageColor3         = Color3.fromRGB(100,103,130)
+                end
+            end
+            homeTabSelected()  -- start with home tab selected
+
+            hBtn.MouseButton1Click:Connect(function()
+                pcall(function() d.tab:ShowTab() end)
+                homeTabSelected()
+            end)
+            hBtn.MouseEnter:Connect(function()
+                if hBtn.BackgroundColor3 ~= Color3.fromRGB(44,47,60) then
+                    hBtn.BackgroundTransparency = 0.2
+                end
+                hBtn.ImageColor3 = Color3.fromRGB(255,255,255)
+            end)
+            hBtn.MouseLeave:Connect(function()
+                if hBtn.BackgroundColor3 ~= Color3.fromRGB(44,47,60) then
+                    hBtn.BackgroundTransparency = 0.4
+                end
+                hBtn.ImageColor3 = Color3.fromRGB(161,169,225)
+            end)
+
+            -- When a regular sidebar tab is clicked, deselect the home button
+            for _,e in ipairs(Library._sidebarButtons) do
+                local origClick = e.button.MouseButton1Click
+                e.button.MouseButton1Click:Connect(function()
+                    hBtn.BackgroundColor3       = Color3.fromRGB(27,29,33)
+                    hBtn.BackgroundTransparency = 0.4
+                    hBtn.ImageColor3            = Color3.fromRGB(100,103,130)
+                end)
+            end
+
+            break  -- only the first hidden tab
         end
     end)
 
@@ -12103,7 +12171,7 @@ function Library:SetupHomeTab(Window, config)
     task.spawn(function() while task.wait(2) do updateServerInfo() end end)
 
     -- ── Info category: executor + build/branch ────────────────────────────
-    local infoBox = tab:AddLeftGroupbox("Info")
+    local infoBox = tab:AddRightGroupbox("Info")
     addCategoryLine(infoBox)
 
     local verStr = (execVersion and execVersion ~= "") and ("  " .. execVersion) or ""
