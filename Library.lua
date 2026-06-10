@@ -2565,6 +2565,7 @@ do
             Parent = ToggleLabel;
         })
         DisplayFrame.BorderSizePixel = 0
+        DisplayFrame.ClipsDescendants = true  -- clips checker/gradient to rounded shape
         Instance.new("UICorner", DisplayFrame).CornerRadius = UDim.new(0, 4)
 
         -- Transparency image taken from https://github.com/matas3535/SplixPrivateDrawingLibrary/blob/main/Library.lua cus i'm lazy
@@ -2609,6 +2610,7 @@ do
         PickerFrameOuter.BorderSizePixel = 0
         Instance.new("UICorner", PickerFrameOuter).CornerRadius = UDim.new(0, 8)
         PickerFrameInner.BorderSizePixel = 0
+        PickerFrameInner.ClipsDescendants = true  -- clips Highlight & content to rounded corners
         Instance.new("UICorner", PickerFrameInner).CornerRadius = UDim.new(0, 8)
 
         local Highlight = Library:Create("Frame", {
@@ -5439,7 +5441,7 @@ do
             Fill.Size = UDim2.new(X, 0, 1, 0)
 
             -- I have no idea what this is
-            HideBorderRight.Visible = not (X == 1 or X == 0)
+            HideBorderRight.Visible = false  -- UICorner provides clean edges; no 1px artifact
         end
 
         function Slider:OnChanged(Func)
@@ -5554,6 +5556,7 @@ do
             -- Ctrl + click: open a numeric input overlay
             if Input.UserInputType == Enum.UserInputType.MouseButton1
                and InputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                Slider._dragGen = (Slider._dragGen or 0) + 1  -- stop any ongoing after-release interpolation
                 local prevVal = Slider.Value
                 local overlay = Instance.new("TextBox")
                 overlay.BackgroundColor3 = Library.MainColor
@@ -5588,7 +5591,6 @@ do
                         Slider:Display()
                         Library:SafeCallback(Slider.Callback, Slider.Value)
                         Library:SafeCallback(Slider.Changed, Slider.Value)
-                        Library:AttemptSave()
                     end
                 end)
                 return
@@ -5850,7 +5852,7 @@ do
                         SubDisplayLabel.Text = tostring(custom)
                         local X2 = Library:MapValue(SubSlider.Value, SubSlider.Min, SubSlider.Max, 0, 1)
                         SubFill.Size = UDim2.new(X2, 0, 1, 0)
-                        SubHideBorderRight.Visible = not (X2 == 1 or X2 == 0)
+                        SubHideBorderRight.Visible = false
                         return
                     end
                 end
@@ -5865,7 +5867,7 @@ do
                 end
                 local X = Library:MapValue(SubSlider.Value, SubSlider.Min, SubSlider.Max, 0, 1)
                 SubFill.Size = UDim2.new(X, 0, 1, 0)
-                SubHideBorderRight.Visible = not (X == 1 or X == 0)
+                SubHideBorderRight.Visible = false
             end
 
             function SubSlider:OnChanged(Func)
@@ -7507,8 +7509,8 @@ do
 
         local Container = Library:Create("Frame", {
             BackgroundTransparency = 1;
-            Position = UDim2.new(0, 4, 0, 10);
-            Size = UDim2.new(1, -4, 1, -10);
+            Position = UDim2.new(0, 5, 0, 10);
+            Size = UDim2.new(1, -10, 1, -10);
             ZIndex = 1;
             Parent = BoxInner;
         })
@@ -8175,6 +8177,10 @@ do
             RichText = true;
             Parent   = InnerFrame;
         })
+        -- Ensure centering is applied (CreateLabel may override)
+        NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
+        NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
+        NotifyLabel.Position       = UDim2.new(0.5, 0, 0.5, 0)
 
         local _barSide    = string.lower(Library.NotificationBarSide or "left")
         local _forceColor = Library.NotificationForceColor
@@ -8201,8 +8207,9 @@ do
                 BorderSizePixel  = 0;
                 Size             = UDim2.new(0, 3, 1, 0);
                 ZIndex           = 11004;
-                Parent           = NotifyOuter;
+                Parent           = NotifyInner;   -- InnerFrame has matching UICorner → no corner bleed
             })
+            Instance.new("UICorner", SideColor).CornerRadius = UDim.new(0, 8)
             if not _forceColor then
                 Library:AddToRegistry(SideColor, { BackgroundColor3 = "AccentColor"; }, true)
             end
@@ -10073,6 +10080,8 @@ end
                 BackgroundColor3 = "BackgroundColor";
                 BorderColor3 = "OutlineColor";
             })
+            SubBtn.BorderSizePixel = 0
+            Instance.new("UICorner", SubBtn).CornerRadius = UDim.new(0, 5)
 
             local SubBtnInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -10083,6 +10092,8 @@ end
                 Parent = SubBtn;
             })
             Library:AddToRegistry(SubBtnInner, { BackgroundColor3 = "BackgroundColor" })
+            SubBtnInner.BorderSizePixel = 0
+            Instance.new("UICorner", SubBtnInner).CornerRadius = UDim.new(0, 4)
 
             local SubBtnLabel = Library:CreateLabel({
                 Position = UDim2.new(0, 0, 0, 0);
@@ -11814,10 +11825,12 @@ function Library:SetTabNamesVisible(visible)
     local sbActive = Library._sidebarFrame and Library._sidebarFrame.Visible
     if sbActive then
         local newW = visible and _SW or _SW_ICON
-        -- Resize sidebar and divider
-        Library._sidebarFrame.Size = UDim2.new(0, newW, 1, 0)
+        local _hh3 = Library._headerHeight or 25
+        -- Resize sidebar and divider (must account for headerHeight or home btn falls outside)
+        Library._sidebarFrame.Size    = UDim2.new(0, newW, 1, -_hh3)
         if Library._sidebarLine then
-            Library._sidebarLine.Position = UDim2.new(0, newW, 0, 0)
+            Library._sidebarLine.Position = UDim2.new(0, newW, 0, _hh3)
+            Library._sidebarLine.Size     = UDim2.new(0, 1, 1, -_hh3)
         end
         -- Shift content area
         local TC = Library._TabContainer
@@ -12042,7 +12055,8 @@ function Library:ApplySidebarLayout()
     sb.ZIndex=10; sb.Parent=_sbParent
     Instance.new("UICorner",sb).CornerRadius=UDim.new(0,4)
     local line=Instance.new("Frame"); line.BackgroundColor3=Color3.fromRGB(44,47,54)
-    line.BorderSizePixel=0; line.Position=UDim2.new(0,curW,0,0); line.Size=UDim2.new(0,1,1,0)
+    line.BorderSizePixel=0
+    line.Position=UDim2.new(0,curW,0,_hh); line.Size=UDim2.new(0,1,1,-_hh)
     line.ZIndex=10; line.Parent=_sbParent; Library._sidebarLine=line
 
     -- Tab-buttons live in a dedicated inner frame so the home button
@@ -12716,6 +12730,10 @@ local function _ensureKbFrame()
     cc.Position=UDim2.new(0,0,0,24); cc.Size=UDim2.new(1,0,1,-24); cc.ZIndex=101; cc.Parent=outer
     local ll = Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Parent=cc
+    local kbPad = Instance.new("UIPadding")
+    kbPad.PaddingLeft=UDim.new(0,3); kbPad.PaddingRight=UDim.new(0,3)
+    kbPad.PaddingTop=UDim.new(0,2); kbPad.PaddingBottom=UDim.new(0,2)
+    kbPad.Parent = cc
 
     -- Drag
     local dragActive,dragStart,dragOrigin=false,Vector2.zero,outer.Position
@@ -12756,9 +12774,18 @@ function Library:_RebuildKeybindList()
         local active = (ok and st == true) or (picker.Mode == "Always") or false
         if not (Library._keybindListShowAll or active) then continue end
 
-        -- Get display text from SnowFall's row ([KEY] Feature (Mode))
+        -- Get display text: prefer SnowFall's own label, fall back to constructing from picker fields
         local srcLbl = row:FindFirstChildWhichIsA("TextLabel")
-        local txt    = (srcLbl and srcLbl.Text ~= "") and srcLbl.Text or "Keybind"
+        local txt
+        if srcLbl and srcLbl.Text ~= "" and srcLbl.Text ~= "None" then
+            txt = srcLbl.Text
+        else
+            -- Construct from picker: "[MB2] Feature (Toggle)"
+            local key  = tostring(picker.Value or "?")
+            local name = tostring(picker.Name or "Keybind")
+            local mode = tostring(picker.Mode or "")
+            txt = "[" .. key .. "]  " .. name .. (mode ~= "" and "  (" .. mode .. ")" or "")
+        end
 
         -- Row container (gives us absolute positioning within the UIListLayout)
         local rowFrame = Instance.new("Frame")
