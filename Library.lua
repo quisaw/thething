@@ -5342,6 +5342,7 @@ do
             BorderColor3 = "OutlineColor";
         })
         SliderInner.BorderSizePixel = 0
+        SliderInner.ClipsDescendants = true   -- clips Fill to rounded shape
         Instance.new("UICorner", SliderInner).CornerRadius = UDim.new(0, 4)
 
         local Fill = Library:Create("Frame", {
@@ -5785,7 +5786,8 @@ do
                 Parent           = SubSliderOuter;
             })
             Library:AddToRegistry(SubSliderInner, { BackgroundColor3 = "MainColor"; BorderColor3 = "OutlineColor" })
-            SubSliderInner.BorderSizePixel = 0
+            SubSliderInner.BorderSizePixel  = 0
+            SubSliderInner.ClipsDescendants = true
             Instance.new("UICorner", SubSliderInner).CornerRadius = UDim.new(0, 4)
 
             local SubFill = Library:Create("Frame", {
@@ -8091,13 +8093,15 @@ do
         Instance.new("UICorner", NotifyInner).CornerRadius = UDim.new(0, 8)
 
         local InnerFrame = Library:Create("Frame", {
-            BackgroundColor3 = Color3.new(1, 1, 1);
-            BorderSizePixel = 0;
-            Position = UDim2.new(0, 1, 0, 1);
-            Size = UDim2.new(1, -2, 1, -2);
-            ZIndex = 11002;
-            Parent = NotifyInner;
+            BackgroundColor3 = Library.BackgroundColor;  -- was white; prevents white corner specs
+            BorderSizePixel  = 0;
+            ClipsDescendants = true;                     -- clips gradient to rounded shape
+            Position         = UDim2.new(0, 1, 0, 1);
+            Size             = UDim2.new(1, -2, 1, -2);
+            ZIndex           = 11002;
+            Parent           = NotifyInner;
         })
+        Instance.new("UICorner", InnerFrame).CornerRadius = UDim.new(0, 7)
 
         local Gradient = Library:Create("UIGradient", {
             Color = ColorSequence.new({
@@ -8160,15 +8164,16 @@ do
         end
 
         local NotifyLabel = Library:CreateLabel({
-            AnchorPoint = Side == "left" and Vector2.new(0, 0) or Vector2.new(1, 0);
-            Position = TextPosition;
-            Size = UDim2.new(1, TextSizeOffsetX, 1, TextSizeOffsetY);
-            Text = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description);
-            TextXAlignment = Side == "left" and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right;
+            AnchorPoint = Vector2.new(0.5, 0.5);
+            Position    = UDim2.new(0.5, 0, 0.5, 0);
+            Size        = UDim2.new(1, TextSizeOffsetX, 1, TextSizeOffsetY);
+            Text        = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description);
+            TextXAlignment = Enum.TextXAlignment.Center;
+            TextYAlignment = Enum.TextYAlignment.Center;
             TextSize = 14;
-            ZIndex = 11003;
+            ZIndex   = 11003;
             RichText = true;
-            Parent = InnerFrame;
+            Parent   = InnerFrame;
         })
 
         local _barSide    = string.lower(Library.NotificationBarSide or "left")
@@ -9658,6 +9663,10 @@ end
                 BackgroundColor3 = "BackgroundColor";
                 BorderColor3 = "OutlineColor";
             })
+            BoxOuter.BorderSizePixel = 0
+            do local uc=Instance.new("UICorner",BoxOuter); uc.CornerRadius=UDim.new(0,6) end
+            do local us=Instance.new("UIStroke"); us.Color=Library.OutlineColor; us.Thickness=1
+               us.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; us.Parent=BoxOuter end
 
             local BoxInner = Library:Create("Frame", {
                 BackgroundColor3 = Library.BackgroundColor;
@@ -9668,6 +9677,9 @@ end
                 ZIndex = 4;
                 Parent = BoxOuter;
             })
+            BoxInner.BorderSizePixel = 0
+            do local uc=Instance.new("UICorner",BoxInner); uc.CornerRadius=UDim.new(0,5) end
+            BoxInner.ClipsDescendants = true
 
             Library:AddToRegistry(BoxInner, {
                 BackgroundColor3 = "BackgroundColor";
@@ -11485,9 +11497,11 @@ end
                     if not inst:FindFirstChildWhichIsA("UIListLayout") then return end
                     if inst:FindFirstChildWhichIsA("UIPadding") then return end
                     local p = Instance.new("UIPadding")
-                    p.PaddingLeft  = UDim.new(0, 4)
-                    p.PaddingRight = UDim.new(0, 4)
-                    p.Parent       = inst
+                    p.PaddingLeft   = UDim.new(0, 5)
+                    p.PaddingRight  = UDim.new(0, 5)
+                    p.PaddingTop    = UDim.new(0, 5)
+                    p.PaddingBottom = UDim.new(0, 5)
+                    p.Parent        = inst
                 end)
             end
         end
@@ -11919,7 +11933,17 @@ function Library:SetTabIconsVisible(visible)
                 if icon then
                     icon.Visible = false
                     local orig = Library._origBtnData[d.tab]
-                    if orig then btn.Size = orig.btnSize; lbl.Position = orig.lblPos; lbl.Size = orig.lblSize end
+                    if orig then
+                        btn.Size     = orig.btnSize
+                        lbl.Position = orig.lblPos
+                        lbl.Size     = orig.lblSize
+                        lbl.Text     = lbl.Text  -- force layout refresh
+                    end
+                    -- If names are also hidden, show them so the tab isn't blank
+                    if Library._tabNamesVisible == false then
+                        lbl.Visible  = true
+                        lbl.Text     = d.tab.Name or ""
+                    end
                 end
             end
         end
@@ -12445,11 +12469,20 @@ function Library:SetupHomeTab(Window, config)
     addCategoryLine(leftBox)
 
     -- Row 1: Welcome [DisplayName]   |   Date (right-aligned)
+    -- TextTruncate.AtEnd shortens a very long name (e.g. "thisisalong...") so the date stays visible.
     local nameRow = leftBox:AddLabel("<b>Welcome,  " .. displayName .. "!</b>", false)
+    pcall(function()
+        local tl = nameRow and nameRow.TextLabel
+        if tl then tl.TextTruncate = Enum.TextTruncate.AtEnd; tl.TextXAlignment = Enum.TextXAlignment.Left end
+    end)
     local dateInline = addInlineRight(nameRow, "")
 
     -- Row 2: @username   |   Time (right-aligned)
     local userRow = leftBox:AddLabel('<font color="rgb(165,165,165)">@' .. userName .. "</font>", false)
+    pcall(function()
+        local tl = userRow and userRow.TextLabel
+        if tl then tl.TextTruncate = Enum.TextTruncate.AtEnd; tl.TextXAlignment = Enum.TextXAlignment.Left end
+    end)
     local timeInline = addInlineRight(userRow, "")
     leftBox:AddDivider()
 
@@ -12637,68 +12670,143 @@ end
 -- ── Keybind list (Starlight) ─────────────────────────────────────────────────
 Library._keybindListShowAll = false
 
--- Per-picker active-state cache (avoids re-tweening unchanged rows)
-Library._pickerActiveCache = {}
+-- Our own keybind list frame — completely separate from Library.KeybindFrame/KeybindContainer
+-- so SnowFall's internal SetVisibility calls never interfere with ours.
+Library._starlightKbFrame     = nil
+Library._starlightKbContainer = nil
+
+local function _ensureKbFrame()
+    if Library._starlightKbFrame and Library._starlightKbFrame.Parent then return end
+    local sg = Library.ScreenGui
+    if not sg then return end
+
+    local outer = Instance.new("Frame")
+    outer.Name                   = "StarlightKeybindList"
+    outer.BackgroundColor3       = Library.BackgroundColor
+    outer.BackgroundTransparency = 0.08
+    outer.BorderSizePixel        = 0
+    outer.Position               = UDim2.new(1,-230,1,-60)
+    outer.Size                   = UDim2.fromOffset(220, 26)
+    outer.ZIndex                 = 100
+    outer.Visible                = false
+    outer.Parent                 = sg
+    Library:AddToRegistry(outer, { BackgroundColor3 = "BackgroundColor" })
+    Instance.new("UICorner", outer).CornerRadius = UDim.new(0, 6)
+    do local st=Instance.new("UIStroke"); st.Color=Library.OutlineColor; st.Thickness=1
+       st.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; st.Parent=outer end
+
+    local titleLbl = Instance.new("TextLabel")
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Font            = Library.Font or Enum.Font.Gotham
+    titleLbl.TextColor3      = Color3.fromRGB(161,169,225)
+    titleLbl.TextSize        = 13
+    titleLbl.Text            = "Keybinds"
+    titleLbl.Size            = UDim2.new(1,-8,0,20)
+    titleLbl.Position        = UDim2.new(0,4,0,2)
+    titleLbl.TextXAlignment  = Enum.TextXAlignment.Left
+    titleLbl.ZIndex          = 101
+    titleLbl.Parent          = outer
+    Library:AddToRegistry(titleLbl, { TextColor3 = "AccentColor" })
+
+    local sep = Instance.new("Frame"); sep.BackgroundColor3=Library.OutlineColor
+    sep.BorderSizePixel=0; sep.Size=UDim2.new(1,-8,0,1)
+    sep.Position=UDim2.new(0,4,0,22); sep.ZIndex=101; sep.Parent=outer
+
+    local cc = Instance.new("Frame"); cc.BackgroundTransparency=1
+    cc.Position=UDim2.new(0,0,0,24); cc.Size=UDim2.new(1,0,1,-24); cc.ZIndex=101; cc.Parent=outer
+    local ll = Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
+    ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Parent=cc
+
+    -- Drag
+    local dragActive,dragStart,dragOrigin=false,Vector2.zero,outer.Position
+    outer.InputBegan:Connect(function(inp)
+        if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+        dragActive=true; dragStart=Vector2.new(inp.Position.X,inp.Position.Y); dragOrigin=outer.Position
+    end)
+    cloneref(game:GetService("UserInputService")).InputChanged:Connect(function(inp)
+        if not dragActive or inp.UserInputType~=Enum.UserInputType.MouseMovement then return end
+        local d=Vector2.new(inp.Position.X,inp.Position.Y)-dragStart
+        outer.Position=UDim2.new(dragOrigin.X.Scale,dragOrigin.X.Offset+d.X,
+                                  dragOrigin.Y.Scale,dragOrigin.Y.Offset+d.Y)
+    end)
+    cloneref(game:GetService("UserInputService")).InputEnded:Connect(function(inp)
+        if inp.UserInputType==Enum.UserInputType.MouseButton1 then dragActive=false end
+    end)
+
+    Library._starlightKbFrame     = outer
+    Library._starlightKbContainer = cc
+end
 
 function Library:_RebuildKeybindList()
-    local kf = Library.KeybindFrame
-    local kc = Library.KeybindContainer
-    if not kf or not kc then return end
+    _ensureKbFrame()
+    local outer = Library._starlightKbFrame
+    local cc    = Library._starlightKbContainer
+    if not outer or not cc then return end
+
+    -- Destroy old rows (no conflict with SnowFall — these are entirely our own)
+    for _, child in ipairs(cc:GetChildren()) do
+        if not child:IsA("UIListLayout") then child:Destroy() end
+    end
 
     local vis = 0
-    for _, row in ipairs(kc:GetChildren()) do
-        if not row:IsA("Frame") then continue end
-        local picker = Library._pickerMap[row]
-        if not picker then row.Visible = false; continue end
+    for row, picker in pairs(Library._pickerMap) do
+        if not picker._inList then continue end
 
         local ok, st = pcall(function() return picker:GetState() end)
         local active = (ok and st == true) or (picker.Mode == "Always") or false
-        local inList = picker._inList or false
-        local show   = inList and (Library._keybindListShowAll or active)
-        if row.Visible ~= show then row.Visible = show end
-        if show then vis += 1 end
+        if not (Library._keybindListShowAll or active) then continue end
 
-        -- Fade the label TextColor on active-state change only
-        local lbl = row:FindFirstChildWhichIsA("TextLabel")
-        if lbl then
-            local prev = Library._pickerActiveCache[picker]
-            if prev ~= active then
-                Library._pickerActiveCache[picker] = active
-                local col = active and Color3.fromRGB(161,169,225) or Color3.fromRGB(165,165,165)
-                TweenService:Create(lbl, TweenInfo.new(0.3, Enum.EasingStyle.Quad),
-                    { TextColor3 = col }):Play()
-            end
-        end
+        -- Get display text from SnowFall's row ([KEY] Feature (Mode))
+        local srcLbl = row:FindFirstChildWhichIsA("TextLabel")
+        local txt    = (srcLbl and srcLbl.Text ~= "") and srcLbl.Text or "Keybind"
+
+        -- Row container (gives us absolute positioning within the UIListLayout)
+        local rowFrame = Instance.new("Frame")
+        rowFrame.BackgroundTransparency = 1
+        rowFrame.Size        = UDim2.new(1,-8,0,20)
+        rowFrame.ZIndex      = 102
+        rowFrame.LayoutOrder = vis + 1
+        rowFrame.Parent      = cc
+
+        -- Colour-coded indicator square
+        local box = Instance.new("Frame")
+        box.BackgroundColor3 = active and Color3.fromRGB(161,169,225) or Color3.fromRGB(55,58,66)
+        box.BorderSizePixel  = 0
+        box.AnchorPoint      = Vector2.new(0, 0.5)
+        box.Position         = UDim2.new(0, 0, 0.5, 0)
+        box.Size             = UDim2.fromOffset(12, 12)
+        box.ZIndex           = 103
+        box.Parent           = rowFrame
+        Instance.new("UICorner", box).CornerRadius = UDim.new(0, 2)
+
+        -- Text: "[MB2] Feature (Toggle)"
+        local lbl = Instance.new("TextLabel")
+        lbl.BackgroundTransparency = 1
+        lbl.Font       = Library.Font or Enum.Font.Gotham
+        lbl.TextSize   = 13
+        lbl.TextColor3 = active and Color3.fromRGB(220,220,235) or Color3.fromRGB(165,165,165)
+        lbl.Text       = txt
+        lbl.Size       = UDim2.new(1,-18,1,0)
+        lbl.Position   = UDim2.new(0,16,0,0)
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.ZIndex     = 102
+        lbl.Parent     = rowFrame
+
+        vis += 1
     end
 
-    kf.Size = UDim2.new(0, 220, 0, math.max(vis, 0) * 18 + 26)
-
-    local shouldShow = (vis > 0) and Library._keybindListVisible ~= false
-
-    -- Only update visibility when state actually changes; avoid concurrent tweens
-    if shouldShow ~= kf.Visible and not Library._kbFading then
-        if shouldShow then
-            kf.Visible = true
-        else
-            Library._kbFading = true
-            task.delay(0.35, function()
-                Library._kbFading = false
-                if not ((Library._keybindListVisible ~= false) and Library._kbHasVis) then
-                    kf.Visible = false
-                end
-            end)
-        end
-    end
-    Library._kbHasVis = vis > 0
+    local w = math.max(220, 0)
+    outer.Size    = UDim2.fromOffset(w, vis * 20 + 28)
+    outer.Visible = vis > 0 and Library._keybindListVisible ~= false
 end
 
 Library._keybindListVisible = true
 Library._kbFading          = false
 
--- Periodically refresh active-state colours (every 0.1 s is imperceptible)
+-- Periodically refresh (every 0.15 s keeps CPU impact low)
 task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.15)
         pcall(function() Library:_RebuildKeybindList() end)
     end
 end)
