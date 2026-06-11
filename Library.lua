@@ -2416,7 +2416,15 @@ do
                     if HoldingKey and not Library.Toggled then
                         KeyPicker:DoClick()
                     end
-                end  -- Hold mode callbacks are fired via poll (see _RebuildKeybindList)
+                elseif KeyPicker.Mode == "Hold" and HoldingKey and Library.Toggled ~= true then
+                    -- Immediate fire on press (poll also fires on state change, but misses rapid taps)
+                    Library._holdCallbackStates = Library._holdCallbackStates or {}
+                    if Library._holdCallbackStates[KeyPicker] ~= true then
+                        Library._holdCallbackStates[KeyPicker] = true
+                        Library:SafeCallback(KeyPicker.Callback, true)
+                        Library:SafeCallback(KeyPicker.Clicked,  true)
+                    end
+                end
 
                 KeyPicker:Update()
             end
@@ -2439,7 +2447,19 @@ do
 
             if (not Picking) then
                 KeyPicker:Update()
-                -- Hold callbacks are fired by the poll loop (Library:_RebuildKeybindList)
+                if KeyPicker.Mode == "Hold" and Library.Toggled ~= true then
+                    local relKey = (Input.UserInputType == Enum.UserInputType.Keyboard)
+                        and Input.KeyCode.Name
+                        or SpecialKeysInput[Input.UserInputType]
+                    if relKey == KeyPicker.Value then
+                        Library._holdCallbackStates = Library._holdCallbackStates or {}
+                        if Library._holdCallbackStates[KeyPicker] ~= false then
+                            Library._holdCallbackStates[KeyPicker] = false
+                            Library:SafeCallback(KeyPicker.Callback, false)
+                            Library:SafeCallback(KeyPicker.Clicked,  false)
+                        end
+                    end
+                end
             end
         end))
 
@@ -5322,7 +5342,8 @@ do
         })
 
         SliderOuter:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-            Slider.MaxSize = SliderOuter.AbsoluteSize.X - 2
+            local _btnW = Info.NoPlusMinus and 0 or 36
+            Slider.MaxSize = SliderOuter.AbsoluteSize.X - _btnW - 2
         end)
 
         Library:AddToRegistry(SliderOuter, {
@@ -5331,11 +5352,14 @@ do
         SliderOuter.BorderSizePixel = 0
         Instance.new("UICorner", SliderOuter).CornerRadius = UDim.new(0, 4)
 
+        -- +/− buttons sit on the right edge of SliderOuter, shrink SliderInner to fit
+        local _sliderBtnW = Info.NoPlusMinus and 0 or 36  -- 0 if developer opts out
+
         local SliderInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, 0, 1, 0);
+            Size = UDim2.new(1, -_sliderBtnW, 1, 0);
             ZIndex = 6;
             Parent = SliderOuter;
         })
@@ -5376,14 +5400,56 @@ do
             BackgroundColor3 = "AccentColor";
         })
 
+        local _sliderAlign = ({Left=Enum.TextXAlignment.Left,Center=Enum.TextXAlignment.Center,Right=Enum.TextXAlignment.Right})[Info.TextAlignment or "Center"] or Enum.TextXAlignment.Center
         local DisplayLabel = Library:CreateLabel({
             Size = UDim2.new(1, 0, 1, 0);
             TextSize = 14;
             Text = "Infinite";
+            TextXAlignment = _sliderAlign;
             ZIndex = 9;
             Parent = SliderInner;
             RichText = true;
         })
+
+        -- +/− step buttons
+        if not Info.NoPlusMinus then
+            local _step = Slider.Rounding == 0 and 1
+                or tonumber("1e-"..tostring(Slider.Rounding)) or 1
+
+            local function _mkStepBtn(label, xOff, delta)
+                local b = Instance.new("TextButton")
+                b.Text = label; b.Font = Library.Font; b.TextSize = 13
+                b.TextColor3 = Library.FontColor; b.AutoButtonColor = false
+                b.BackgroundColor3 = Library.MainColor; b.BorderSizePixel = 0
+                b.Size = UDim2.new(0, 17, 1, 0)
+                b.Position = UDim2.new(1, xOff, 0, 0)
+                b.ZIndex = 9; b.Parent = SliderOuter
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 3)
+                Library:AddToRegistry(b, { BackgroundColor3 = "MainColor"; TextColor3 = "FontColor" })
+                b.MouseEnter:Connect(function() if not Slider.Disabled then b.BackgroundColor3=Library.AccentColor end end)
+                b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
+                b.MouseButton1Click:Connect(function()
+                    if Slider.Disabled then return end
+                    local newVal
+                    if Slider.Rounding == 0 then
+                        newVal = math.clamp(Slider.Value + delta, Slider.Min, Slider.Max)
+                    else
+                        local fmt = "%." .. tostring(Slider.Rounding) .. "f"
+                        newVal = tonumber(string.format(fmt,
+                            math.clamp(Slider.Value + delta, Slider.Min, Slider.Max)))
+                    end
+                    if newVal ~= Slider.Value then
+                        Slider.Value = newVal; Slider:Display()
+                        Library:SafeCallback(Slider.Callback, Slider.Value)
+                        Library:SafeCallback(Slider.Changed,  Slider.Value)
+                    end
+                end)
+                return b
+            end
+
+            _mkStepBtn("−", -35, -_step)
+            _mkStepBtn("+", -18, _step)
+        end
 
         Library:OnHighlight(SliderOuter, SliderOuter,
             { BorderColor3 = "AccentColor" },
@@ -8128,7 +8194,8 @@ do
 
         NotifyOuter.BorderSizePixel = 0
         Instance.new("UICorner", NotifyOuter).CornerRadius = UDim.new(0, 8)
-        NotifyInner.BorderSizePixel = 0
+        NotifyInner.BorderSizePixel  = 0
+        NotifyInner.ClipsDescendants = true  -- clips SideColor to UICorner(8) rounded shape
         Instance.new("UICorner", NotifyInner).CornerRadius = UDim.new(0, 8)
 
         local InnerFrame = Library:Create("Frame", {
@@ -9751,12 +9818,13 @@ end
                 BackgroundColor3 = "AccentColor";
             })
 
+            local _catAlign = ({Left=Enum.TextXAlignment.Left,Center=Enum.TextXAlignment.Center,Right=Enum.TextXAlignment.Right})[Info.TextAlignment or "Left"] or Enum.TextXAlignment.Left
             local GroupboxLabel = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 18);
+                Size = UDim2.new(1, -8, 0, 18);
                 Position = UDim2.new(0, 4, 0, 2);
                 TextSize = 14;
                 Text = Info.Name;
-                TextXAlignment = Enum.TextXAlignment.Left;
+                TextXAlignment = _catAlign;
                 ZIndex = 5;
                 Parent = BoxInner;
             })
@@ -11424,6 +11492,11 @@ end
         end)
     end
 
+    -- Initialise watermark with per-script title/version from window config
+    if WindowInfo.WatermarkTitle   then Library._wmTitle   = WindowInfo.WatermarkTitle   end
+    if WindowInfo.WatermarkVersion then Library._wmVersion = WindowInfo.WatermarkVersion end
+    Library:_StartWatermark()
+
     Window:SetBackgroundImage(WindowInfo.BackgroundImage or "")
     if WindowInfo.AutoShow then task.spawn(Library.Toggle) end
 
@@ -12307,11 +12380,314 @@ function Library:RemoveSidebarLayout()
 end
 
 
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- WATERMARK SYSTEM — built into Library; every script gets this for free.
+-- Access via Library.WM for developer customisation (titleColor, titleColorFunc).
+-- ════════════════════════════════════════════════════════════════════════════════
+Library._fpsVal   = 60;  Library._fpsCnt   = 0;  Library._fpsTimer = tick()
+Library._pingVal  = 0
+Library._colorPing = false  -- set by BuildUISettingsTab when developer enables it
+Library._wmTitle   = "Script"
+Library._wmVersion = "v1.0"
+
+local function _wm_pingColor(ms)
+    return ms<=75 and "rgb(80,200,120)" or ms<=100 and "rgb(255,193,7)" or "rgb(220,80,80)"
+end
+
+local function _wm_coloredTitle(wm, title)
+    if wm.titleColorFunc then
+        local s=""
+        for i=1,#title do
+            local ch=title:sub(i,i); local c=wm.titleColorFunc(i,ch)
+            if c then s=s..string.format('<font color="rgb(%d,%d,%d)">%s</font>',
+                math.floor(c.R*255),math.floor(c.G*255),math.floor(c.B*255),ch)
+            else s=s..ch end
+        end; return s
+    elseif wm.titleColor then
+        local c=wm.titleColor
+        return string.format('<font color="rgb(%d,%d,%d)">%s</font>',
+            math.floor(c.R*255),math.floor(c.G*255),math.floor(c.B*255),title)
+    end; return title
+end
+
+local function _wm_elemText(id)
+    local wm = Library.WM; if not wm then return id end
+    if     id=="script" then
+        if wm.titleAnim~="None" and #wm._charLabels>0 then return "" end
+        return _wm_coloredTitle(wm, Library._wmTitle)
+    elseif id=="fps"  then return Library._fpsVal.." fps"
+    elseif id=="ping" then
+        if Library._colorPing then
+            return string.format('<font color="%s">%d</font> ms',
+                _wm_pingColor(Library._pingVal), Library._pingVal)
+        else return Library._pingVal.." ms" end
+    elseif id=="user" then
+        local ok,lp = pcall(function() return Players.LocalPlayer end)
+        if ok and lp then return lp.DisplayName.." (@"..lp.Name..")" end
+        return "@player"
+    elseif id=="ver"  then return Library._wmVersion
+    else return id end
+end
+
+Library.WM = {
+    order          = {"script","fps","ping","user","ver"},
+    enabled        = {script=true,fps=true,ping=false,user=false,ver=false},
+    lockPos=false; lockElems=false; visible=true;
+    savedPos       = UDim2.new(1,-8,0,8); container=nil; labels={};
+    _conns={}; elemDragActive=false;
+    separatorColor = Color3.fromRGB(161,169,225);
+    titleAnim="None"; titleAnimSpeed=1; _animConn=nil; _charLabels={};
+    titleColor=nil; titleColorFunc=nil;   -- developer colour API
+}
+
+do local WM = Library.WM   -- shorthand for the block below
+
+function WM:SetTitleColor(c)
+    self.titleColor=c; self.titleColorFunc=nil; self:Build()
+    if self.titleAnim~="None" then task.defer(function() self:_rebuildTitleAnim() end) end
+end
+function WM:SetHalfTitleColor(c1,c2)
+    local mid=math.ceil(#Library._wmTitle/2)
+    self.titleColorFunc=function(i) return i<=mid and c1 or c2 end
+    self.titleColor=nil; self:Build()
+    if self.titleAnim~="None" then task.defer(function() self:_rebuildTitleAnim() end) end
+end
+function WM:SetCharColors(map)
+    self.titleColorFunc=function(i,ch) return map[i] or map[ch] end
+    self.titleColor=nil; self:Build()
+    if self.titleAnim~="None" then task.defer(function() self:_rebuildTitleAnim() end) end
+end
+
+function WM:_clearConns()
+    for _,c in ipairs(self._conns) do pcall(function() c:Disconnect() end) end
+    self._conns={}
+end
+function WM:_enabledSeq()
+    local seq={}
+    for _,v in ipairs(self.order) do if self.enabled[v] then seq[#seq+1]=v end end
+    return seq
+end
+function WM:_orderFromLabels()
+    local seq={}
+    for _,v in ipairs(self.order) do
+        if self.enabled[v] and self.labels[v] then
+            seq[#seq+1]={id=v,lo=self.labels[v].LayoutOrder}
+        end
+    end
+    table.sort(seq,function(a,b) return a.lo<b.lo end)
+    local r={}; for _,e in ipairs(seq) do r[#r+1]=e.id end; return r
+end
+
+function WM:Build()
+    self:_clearConns()
+    if self.container then self.container:Destroy() end
+    self.container=nil; self.labels={}
+    if not self.visible then return end
+    local sg=Library.ScreenGui; if not sg then return end
+
+    local outer=Instance.new("Frame")
+    outer.Name="LibraryWM"; outer.BackgroundColor3=Color3.fromRGB(19,21,24)
+    outer.BackgroundTransparency=0.25; outer.BorderSizePixel=0
+    outer.AnchorPoint=Vector2.new(1,0); outer.Position=self.savedPos
+    outer.AutomaticSize=Enum.AutomaticSize.X; outer.Size=UDim2.new(0,0,0,22)
+    outer.ZIndex=100; outer.Parent=sg
+    Instance.new("UICorner",outer).CornerRadius=UDim.new(0,4)
+    local pad=Instance.new("UIPadding")
+    pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6)
+    pad.PaddingTop=UDim.new(0,3); pad.PaddingBottom=UDim.new(0,3); pad.Parent=outer
+    local ll=Instance.new("UIListLayout")
+    ll.FillDirection=Enum.FillDirection.Horizontal; ll.VerticalAlignment=Enum.VerticalAlignment.Center
+    ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,0); ll.Parent=outer
+    self.container=outer
+
+    local seq=self:_enabledSeq(); local nElem=#seq
+    for slot,id in ipairs(seq) do
+        if slot>1 then
+            local sep=Instance.new("TextLabel"); sep.BackgroundTransparency=1
+            sep.Font=Library.Font or Enum.Font.Gotham; sep.RichText=true; sep.TextSize=13
+            sep.TextColor3=Color3.fromRGB(255,255,255)
+            local sc=self.separatorColor
+            sep.Text=string.format('  <font color="rgb(%d,%d,%d)">|</font>  ',
+                math.floor(sc.R*255),math.floor(sc.G*255),math.floor(sc.B*255))
+            sep.AutomaticSize=Enum.AutomaticSize.X; sep.Size=UDim2.new(0,0,1,0)
+            sep.ZIndex=101; sep.LayoutOrder=slot*2-1; sep.Parent=outer
+        end
+        local lbl=Instance.new("TextLabel")
+        lbl.Name="_wml_"..id; lbl.BackgroundTransparency=1; lbl.RichText=true
+        lbl.Font=Library.Font or Enum.Font.Gotham
+        lbl.TextColor3=Color3.fromRGB(220,220,235); lbl.TextSize=13
+        lbl.AutomaticSize=Enum.AutomaticSize.X; lbl.Size=UDim2.new(0,0,1,0)
+        lbl.ZIndex=101; lbl.LayoutOrder=slot*2; lbl.Text=_wm_elemText(id); lbl.Parent=outer
+        self.labels[id]=lbl
+    end
+
+    -- Element drag
+    if not self.lockElems then
+        local UIS2 = cloneref(game:GetService("UserInputService"))
+        for _,dragId in ipairs(seq) do
+            local lbl=self.labels[dragId]; local active=false; local startX=0; local lastShift=0
+            lbl.InputBegan:Connect(function(inp)
+                if self.lockElems then return end
+                if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+                active=true; startX=inp.Position.X; lastShift=0; self.elemDragActive=true
+                TweenService:Create(lbl,TweenInfo.new(0.08),{TextTransparency=0.4}):Play()
+            end)
+            local mc=UIS2.InputChanged:Connect(function(inp)
+                if not active then return end
+                if inp.UserInputType~=Enum.UserInputType.MouseMovement then return end
+                local dx=inp.Position.X-startX; local shift=math.floor(dx/40+0.5)
+                if shift==lastShift then return end; lastShift=shift
+                local origSlot=nil
+                for idx,v in ipairs(seq) do if v==dragId then origSlot=idx; break end end
+                if not origSlot then return end
+                local newSlot=math.clamp(origSlot+shift,1,nElem)
+                local newSeq={}
+                for _,v in ipairs(seq) do if v~=dragId then newSeq[#newSeq+1]=v end end
+                table.insert(newSeq,newSlot,dragId)
+                for slot2,id2 in ipairs(newSeq) do
+                    if self.labels[id2] then
+                        local disp=id2~=dragId and self.labels[id2].LayoutOrder~=slot2*2
+                        self.labels[id2].LayoutOrder=slot2*2
+                        if disp then
+                            TweenService:Create(self.labels[id2],TweenInfo.new(0.1),{TextTransparency=0.2}):Play()
+                            task.delay(0.1,function() TweenService:Create(self.labels[id2],TweenInfo.new(0.1),{TextTransparency=0}):Play() end)
+                        end
+                    end
+                end
+            end)
+            local ec=UIS2.InputEnded:Connect(function(inp)
+                if not active then return end
+                if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+                active=false; self.elemDragActive=false
+                TweenService:Create(lbl,TweenInfo.new(0.1),{TextTransparency=0}):Play()
+                local finalSeq=self:_orderFromLabels()
+                local newOrder={}; local ep=1
+                for _,v in ipairs(self.order) do
+                    if self.enabled[v] then newOrder[#newOrder+1]=finalSeq[ep]; ep+=1
+                    else newOrder[#newOrder+1]=v end
+                end
+                self.order=newOrder; self:Build()
+            end)
+            table.insert(self._conns,mc); table.insert(self._conns,ec)
+        end
+    end
+
+    -- Whole-watermark drag
+    if not self.lockPos then
+        local UIS3=cloneref(game:GetService("UserInputService"))
+        local wActive=false; local wStart=Vector2.new(); local wPos=outer.Position
+        outer.InputBegan:Connect(function(inp)
+            if self.lockPos or self.elemDragActive then return end
+            if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+            wActive=true; wStart=Vector2.new(inp.Position.X,inp.Position.Y); wPos=outer.Position
+        end)
+        local mc2=UIS3.InputChanged:Connect(function(inp)
+            if not wActive or self.elemDragActive then wActive=false; return end
+            if inp.UserInputType~=Enum.UserInputType.MouseMovement then return end
+            local d=Vector2.new(inp.Position.X,inp.Position.Y)-wStart
+            outer.Position=UDim2.new(wPos.X.Scale,wPos.X.Offset+d.X,wPos.Y.Scale,wPos.Y.Offset+d.Y)
+            self.savedPos=outer.Position
+        end)
+        local ec2=UIS3.InputEnded:Connect(function(inp)
+            if inp.UserInputType==Enum.UserInputType.MouseButton1 then
+                wActive=false; self.savedPos=outer.Position
+            end
+        end)
+        table.insert(self._conns,mc2); table.insert(self._conns,ec2)
+    end
+end  -- WM:Build
+
+function WM:Update()
+    for id,lbl in pairs(self.labels) do
+        if id=="script" and #self._charLabels>0 then continue end
+        lbl.Text=_wm_elemText(id)
+    end
+end
+
+function WM:_rebuildTitleAnim()
+    if self._animConn then pcall(function() self._animConn:Disconnect() end) end
+    self._animConn=nil
+    for _,c in ipairs(self._charLabels) do pcall(function() c:Destroy() end) end
+    self._charLabels={}
+    local outer=self.container; local mainLbl=self.labels["script"]
+    if not outer or not mainLbl or self.titleAnim=="None" then return end
+    mainLbl.Text=""; local titleStr=Library._wmTitle; local t0=tick()
+    local colorFunc=self.titleColorFunc; local font=Library.Font or Enum.Font.Gotham
+    local TS=cloneref(game:GetService("TextService"))
+    local SYMBOLS={"#","@","$","%","&","*","!","?","/","+","=","~","^","<",">"}
+    local charWidths={}; local totalW=0
+    for i=1,#titleStr do
+        local ch=titleStr:sub(i,i)
+        local ok,w=pcall(function() return TS:GetTextSize(ch,13,font,Vector2.new(999,999)).X end)
+        charWidths[i]=(ok and w>0) and w or 8; totalW=totalW+charWidths[i]
+    end
+    mainLbl.AutomaticSize=Enum.AutomaticSize.None; mainLbl.Size=UDim2.new(0,totalW,1,0)
+    mainLbl.ClipsDescendants=false
+    local charData={}; local xAcc=0
+    for i=1,#titleStr do
+        local ch=titleStr:sub(i,i); local cLbl=Instance.new("TextLabel")
+        cLbl.BackgroundTransparency=1; cLbl.Font=font; cLbl.Text=ch; cLbl.TextSize=13
+        cLbl.TextColor3=colorFunc and colorFunc(i,ch) or Color3.fromRGB(220,220,235)
+        cLbl.Size=UDim2.fromOffset(charWidths[i],16); cLbl.Position=UDim2.fromOffset(xAcc,0)
+        cLbl.ZIndex=102; cLbl.Parent=mainLbl
+        charData[i]={lbl=cLbl,orig=ch,x=xAcc}; table.insert(self._charLabels,cLbl)
+        xAcc=xAcc+charWidths[i]
+    end
+    if self.titleAnim=="Wave" then
+        local AMP=3
+        self._animConn=RunService.RenderStepped:Connect(function()
+            local spd=self.titleAnimSpeed or 1; local t=(tick()-t0)*spd
+            for i,d in ipairs(charData) do
+                d.lbl.Position=UDim2.fromOffset(d.x,math.floor(math.sin(t*4-i*0.55)*AMP+0.5))
+            end
+        end)
+    elseif self.titleAnim=="Matrix" then
+        local matTimers={}
+        for i=1,#charData do matTimers[i]=math.random()*0.6 end
+        self._animConn=RunService.RenderStepped:Connect(function()
+            local spd=self.titleAnimSpeed or 1
+            for i,d in ipairs(charData) do
+                matTimers[i]=matTimers[i]-0.016*spd
+                if matTimers[i]<=0 then
+                    d.lbl.Text=math.random()<0.25 and SYMBOLS[math.random(#SYMBOLS)] or d.orig
+                    matTimers[i]=math.random()*0.8+0.3
+                end
+            end
+        end)
+    end
+end  -- WM:_rebuildTitleAnim
+
+end  -- do WM=Library.WM block
+
+-- Start fps + ping tracking (one-time; called lazily from CreateWindow)
+function Library:_StartWatermark()
+    if Library._wmStarted then return end; Library._wmStarted=true
+    -- ping
+    task.spawn(function()
+        while true do
+            task.wait(2)
+            pcall(function()
+                Library._pingVal=math.floor(Players.LocalPlayer:GetNetworkPing()*1000)
+            end)
+        end
+    end)
+    -- fps + update
+    RunService.RenderStepped:Connect(function()
+        Library._fpsCnt+=1
+        if tick()-Library._fpsTimer>=1 then
+            Library._fpsVal=Library._fpsCnt; Library._fpsTimer=tick(); Library._fpsCnt=0
+        end
+        if Library.WM then Library.WM:Update() end
+    end)
+    Library.WM:Build()
+end
+
 -- ── Built-in UI settings tab builder ─────────────────────────────────────────
 -- Call Library:BuildUISettingsTab(tab, wm) to populate a "UI Settings" tab with
 -- the standard layout, keybind-list and watermark controls.
 -- wm = the watermark manager object (must have :Build(), enabled, visible fields).
-function Library:BuildUISettingsTab(tab, wm)
+function Library:BuildUISettingsTab(tab, _wmOverride)
     local Opts = Library.Options or {}
     local Togs = Library.Toggles or {}
 
@@ -12359,8 +12735,8 @@ function Library:BuildUISettingsTab(tab, wm)
     })
 
     -- ── Watermark group (only if wm is provided) ──────────────────────────────
+    local wm = _wmOverride or Library.WM
     if not wm then return end
-    Library._wm = wm   -- store reference for other Library code
 
     local WmBox = tab:AddLeftGroupbox("Watermark")
     WmBox:AddToggle("WmEnabled", {
