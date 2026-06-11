@@ -2616,7 +2616,8 @@ do
         local Highlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Size = UDim2.new(1, 0, 0, 2);
+            Position = UDim2.new(0, 8, 0, 0);   -- inset by 8px corner radius
+            Size = UDim2.new(1, -16, 0, 2);
             ZIndex = 17;
             Parent = PickerFrameInner;
         })
@@ -3053,11 +3054,11 @@ do
 
                 local function mkBtn(label, cb)
                     local b = Instance.new("TextButton")
-                    b.BackgroundColor3=Library.MainColor; b.BorderColor3=Library.OutlineColor
-                    b.BorderMode=Enum.BorderMode.Inset; b.AutomaticSize=Enum.AutomaticSize.X
+                    b.BackgroundColor3=Library.MainColor; b.AutomaticSize=Enum.AutomaticSize.X
                     b.Size=UDim2.new(0,0,1,0); b.Text="  "..label.."  "
                     b.Font=Library.Font; b.TextSize=12; b.TextColor3=Library.FontColor
-                    b.ZIndex=21; b.AutoButtonColor=false; b.Parent=row
+                    b.ZIndex=21; b.AutoButtonColor=false; b.BorderSizePixel=0; b.Parent=row
+                    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
                     b.MouseButton1Click:Connect(cb)
                     b.MouseEnter:Connect(function() b.BackgroundColor3=Library.AccentColor end)
                     b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
@@ -3100,19 +3101,17 @@ do
                     end
                 end)
 
-                -- Speed slider (small, inline)
-                local speedLbl = Library:CreateLabel({
-                    Size=UDim2.fromOffset(0,rowH); AutomaticSize=Enum.AutomaticSize.X;
-                    TextSize=11; Text=" Spd:"; ZIndex=21; Parent=row;
-                })
+                -- Speed slider (no label — "Spd:" text removed per user request)
                 local speedSliderFrame = Instance.new("Frame")
-                speedSliderFrame.BackgroundColor3=Library.MainColor; speedSliderFrame.BorderColor3=Library.OutlineColor
-                speedSliderFrame.BorderMode=Enum.BorderMode.Inset
-                speedSliderFrame.Size=UDim2.fromOffset(36,rowH-4)
-                speedSliderFrame.ZIndex=21; speedSliderFrame.Parent=row
+                speedSliderFrame.BackgroundColor3=Library.MainColor; speedSliderFrame.BorderSizePixel=0
+                speedSliderFrame.Size=UDim2.fromOffset(40,rowH-2)
+                speedSliderFrame.ZIndex=21; speedSliderFrame.ClipsDescendants=true
+                speedSliderFrame.Parent=row
+                Instance.new("UICorner", speedSliderFrame).CornerRadius = UDim.new(0, 4)
                 local speedFill = Instance.new("Frame")
                 speedFill.BackgroundColor3=Library.AccentColor; speedFill.BorderSizePixel=0
                 speedFill.Size=UDim2.new(0.5,0,1,0); speedFill.ZIndex=22; speedFill.Parent=speedSliderFrame
+                Instance.new("UICorner", speedFill).CornerRadius = UDim.new(0, 4)
                 speedSliderFrame.InputBegan:Connect(function(inp)
                     if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
                     while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
@@ -7498,7 +7497,8 @@ do
         local Highlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Size = UDim2.new(1, 0, 0, 2);
+            Position = UDim2.new(0, 5, 0, 0);   -- inset by corner radius
+            Size = UDim2.new(1, -10, 0, 2);
             ZIndex = 5;
             Parent = BoxInner;
         })
@@ -8166,10 +8166,9 @@ do
         end
 
         local NotifyLabel = Library:CreateLabel({
-            AnchorPoint = Vector2.new(0.5, 0.5);
-            Position    = UDim2.new(0.5, 0, 0.5, 0);
-            Size        = UDim2.new(1, TextSizeOffsetX, 1, TextSizeOffsetY);
-            Text        = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description);
+            Position = UDim2.new(0, 0, 0, 0);   -- fill InnerFrame; TextYAlignment handles centering
+            Size     = UDim2.new(1, 0, 1, 0);
+            Text     = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description);
             TextXAlignment = Enum.TextXAlignment.Center;
             TextYAlignment = Enum.TextYAlignment.Center;
             TextSize = 14;
@@ -8177,10 +8176,7 @@ do
             RichText = true;
             Parent   = InnerFrame;
         })
-        -- Ensure centering is applied (CreateLabel may override)
-        NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
-        NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
-        NotifyLabel.Position       = UDim2.new(0.5, 0, 0.5, 0)
+        NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center  -- override any CreateLabel default
 
         local _barSide    = string.lower(Library.NotificationBarSide or "left")
         local _forceColor = Library.NotificationForceColor
@@ -8200,16 +8196,19 @@ do
         if _hasSideStripe then
             local _sideAnchor = _barSide == "right" and Vector2.new(1, 0) or Vector2.new(0, 0)
             local _sidePos    = _barSide == "right" and UDim2.new(1, 0, 0, 0) or UDim2.new(0, 0, 0, 0)
+            local _scOffset = 8  -- match NotifyOuter UICorner radius
+            local _scPos = _barSide == "right"
+                and UDim2.new(1, 0, 0, _scOffset)
+                or  UDim2.new(0, 0, 0, _scOffset)
             local SideColor = Library:Create("Frame", {
                 AnchorPoint      = _sideAnchor;
-                Position         = _sidePos;
+                Position         = _scPos;          -- inset from top by corner radius
                 BackgroundColor3 = _accentCol;
                 BorderSizePixel  = 0;
-                Size             = UDim2.new(0, 3, 1, 0);
+                Size             = UDim2.new(0, 3, 1, -_scOffset * 2);  -- shrink both ends
                 ZIndex           = 11004;
-                Parent           = NotifyInner;   -- InnerFrame has matching UICorner → no corner bleed
+                Parent           = NotifyInner;
             })
-            Instance.new("UICorner", SideColor).CornerRadius = UDim.new(0, 8)
             if not _forceColor then
                 Library:AddToRegistry(SideColor, { BackgroundColor3 = "AccentColor"; }, true)
             end
@@ -9298,7 +9297,8 @@ function Library:CreateWindow(...)
         local TabHighlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Size = UDim2.new(1, 0, 0, 2);
+            Position = UDim2.new(0, 4, 0, 0);   -- inset by corner radius to avoid corner bleed
+            Size = UDim2.new(1, -8, 0, 2);
             ZIndex = 2;
             Visible = false;
             Parent = TabButton;
@@ -9695,7 +9695,8 @@ end
             local Highlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
                 BorderSizePixel = 0;
-                Size = UDim2.new(1, 0, 0, 2);
+                Position = UDim2.new(0, 5, 0, 0);   -- inset by corner radius
+                Size = UDim2.new(1, -10, 0, 2);
                 ZIndex = 5;
                 Parent = BoxInner;
             })
@@ -9720,8 +9721,8 @@ end
 
             local Container = Library:Create("Frame", {
                 BackgroundTransparency = 1;
-                Position = UDim2.new(0, 4, 0, 20);
-                Size = UDim2.new(1, -4, 1, -20);
+                Position = UDim2.new(0, 5, 0, 20);   -- 5px uniform padding
+                Size = UDim2.new(1, -10, 1, -20);
                 ZIndex = 1;
                 Parent = BoxInner;
             })
@@ -9889,8 +9890,8 @@ end
 
                 local Container = Library:Create("Frame", {
                     BackgroundTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 20);
-                    Size = UDim2.new(1, -4, 1, -20);
+                    Position = UDim2.new(0, 5, 0, 20);
+                    Size = UDim2.new(1, -10, 1, -20);
                     ZIndex = 1;
                     Visible = false;
                     Parent = BoxInner;
@@ -10141,7 +10142,8 @@ end
             local SubBtnHighlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
                 BorderSizePixel = 0;
-                Size = UDim2.new(1, 0, 0, 2);
+                Position = UDim2.new(0, 4, 0, 0);   -- inset by corner radius
+                Size = UDim2.new(1, -8, 0, 2);
                 ZIndex = 6;
                 Visible = false;
                 Parent = SubBtnInner;
@@ -10307,8 +10309,8 @@ end
                 Library:_ApplyTabIcon(SubGbLabel, BoxInner, Info.Icon, Info.IconSide, Info.IconColor, 6)
                 local Container = Library:Create("Frame", {
                     BackgroundTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 20);
-                    Size = UDim2.new(1, -4, 1, -20);
+                    Position = UDim2.new(0, 5, 0, 20);
+                    Size = UDim2.new(1, -10, 1, -20);
                     ZIndex = 1;
                     Parent = BoxInner;
                 })
@@ -12694,7 +12696,7 @@ local function _ensureKbFrame()
     local sg = Library.ScreenGui
     if not sg then return end
 
-    local outer = Instance.new("Frame")
+    local outer = Instance.new("CanvasGroup")   -- CanvasGroup: GroupTransparency fades everything uniformly
     outer.Name                   = "StarlightKeybindList"
     outer.BackgroundColor3       = Library.BackgroundColor
     outer.BackgroundTransparency = 0.08
@@ -12731,8 +12733,8 @@ local function _ensureKbFrame()
     local ll = Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Parent=cc
     local kbPad = Instance.new("UIPadding")
-    kbPad.PaddingLeft=UDim.new(0,3); kbPad.PaddingRight=UDim.new(0,3)
-    kbPad.PaddingTop=UDim.new(0,2); kbPad.PaddingBottom=UDim.new(0,2)
+    kbPad.PaddingLeft=UDim.new(0,4); kbPad.PaddingRight=UDim.new(0,4)   -- match "Keybinds" title offset
+    kbPad.PaddingTop=UDim.new(0,2); kbPad.PaddingBottom=UDim.new(0,3)
     kbPad.Parent = cc
 
     -- Drag
@@ -12824,7 +12826,18 @@ function Library:_RebuildKeybindList()
 
     local w = math.max(220, 0)
     outer.Size    = UDim2.fromOffset(w, vis * 20 + 28)
-    outer.Visible = vis > 0 and Library._keybindListVisible ~= false
+    local shouldVis = vis > 0 and Library._keybindListVisible ~= false
+    if shouldVis and not outer.Visible then
+        outer.GroupTransparency = 1
+        outer.Visible = true
+        TweenService:Create(outer, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { GroupTransparency = 0 }):Play()
+    elseif not shouldVis and outer.Visible then
+        if not Library._kbFadeOut then
+            Library._kbFadeOut = true
+            TweenService:Create(outer, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
+            task.delay(0.26, function() Library._kbFadeOut=false; outer.Visible=false end)
+        end
+    end
 end
 
 Library._keybindListVisible = true
