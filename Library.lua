@@ -2416,13 +2416,7 @@ do
                     if HoldingKey and not Library.Toggled then
                         KeyPicker:DoClick()
                     end
-                elseif KeyPicker.Mode == "Hold" and HoldingKey then
-                    -- Fire callback on press (true); release fires false via InputEnded
-                    if not Library.Toggled then
-                        Library:SafeCallback(KeyPicker.Callback, true)
-                        Library:SafeCallback(KeyPicker.Clicked, true)
-                    end
-                end
+                end  -- Hold mode callbacks are fired via poll (see _RebuildKeybindList)
 
                 KeyPicker:Update()
             end
@@ -2445,15 +2439,7 @@ do
 
             if (not Picking) then
                 KeyPicker:Update()
-                if KeyPicker.Mode == "Hold" and not Library.Toggled then
-                    local relKey = (Input.UserInputType == Enum.UserInputType.Keyboard)
-                        and Input.KeyCode.Name
-                        or  SpecialKeysInput[Input.UserInputType]
-                    if relKey == KeyPicker.Value then
-                        Library:SafeCallback(KeyPicker.Callback, false)
-                        Library:SafeCallback(KeyPicker.Clicked, false)
-                    end
-                end
+                -- Hold callbacks are fired by the poll loop (Library:_RebuildKeybindList)
             end
         end))
 
@@ -5973,13 +5959,29 @@ do
                     local gPos = SubFill.AbsoluteSize.X
                     local Diff = mPos - (SubFill.AbsolutePosition.X + gPos)
 
+                    -- Wait one frame to ensure AbsoluteSize is valid (fixes 2nd+ sub-slider)
+                    RunService.RenderStepped:Wait()
+
+                    local _subDragGen = (SubSlider._dragGen or 0) + 1
+                    SubSlider._dragGen = _subDragGen
+                    local _subTarget   = SubSlider.Value
+                    local _subCurrent  = SubSlider.Value
+
                     while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                        local nMPos    = Mouse.X
-                        local _maxS    = SubSliderOuter.AbsoluteSize.X - 2  -- read live, avoids stale cache
-                        if _maxS <= 0 then _maxS = SubSlider.MaxSize end
-                        local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, _maxS)
-                        local nXScale  = Library:MapValue(nXOffset, 0, _maxS, 0, 1)
-                        local nValue   = SubSlider:GetValueFromXScale(nXScale)
+                        local nMPos  = Mouse.X
+                        local _maxS  = SubSliderOuter.AbsoluteSize.X - 2
+                        if _maxS < 1 then _maxS = 1 end
+                        local nXOff  = math.clamp(gPos + (nMPos - mPos) + Diff, 0, _maxS)
+                        local nXSc   = Library:MapValue(nXOff, 0, _maxS, 0, 1)
+                        _subTarget   = SubSlider:GetValueFromXScale(nXSc)
+                        local dist   = math.abs(_subTarget - _subCurrent)
+                        local alpha  = math.clamp(dist > 0 and 0.06 or 0, 0.03, 0.10)
+                        local snap   = (dist < 0.5) or (_subTarget == SubSlider.Min) or (_subTarget == SubSlider.Max)
+                        local nValue = snap and _subTarget
+                            or Library:MapValue(alpha, 0, 1, _subCurrent, _subTarget)
+                        nValue = SubSlider:GetValueFromXScale(
+                            Library:MapValue(nValue, SubSlider.Min, SubSlider.Max, 0, 1))
+                        _subCurrent = nValue
                         local OldValue = SubSlider.Value
                         SubSlider.Value = nValue
                         SubSlider:Display()
@@ -5989,6 +5991,23 @@ do
                         end
                         RunService.RenderStepped:Wait()
                     end
+                    -- After-release: smooth-settle to final target
+                    task.spawn(function()
+                        local myGen = _subDragGen
+                        while RunService.RenderStepped:Wait() do
+                            if SubSlider._dragGen ~= myGen then break end
+                            local dist = math.abs(_subTarget - SubSlider.Value)
+                            if dist < 0.5 or _subTarget == SubSlider.Min or _subTarget == SubSlider.Max then
+                                SubSlider.Value = _subTarget; SubSlider:Display(); break
+                            end
+                            local alpha2 = math.clamp(dist * 0.07, 0.03, 0.10)
+                            SubSlider.Value = SubSlider:GetValueFromXScale(
+                                Library:MapValue(
+                                    Library:MapValue(alpha2,0,1,SubSlider.Value,_subTarget),
+                                    SubSlider.Min, SubSlider.Max, 0, 1))
+                            SubSlider:Display()
+                        end
+                    end)
 
                     if Library.IsMobile then Library.CanDrag = true end
                     for _, Side in pairs(Sides) do
@@ -8183,7 +8202,7 @@ do
             end
         end
 
-        -- Direct TextLabel creation bypasses CreateLabel/ApplyDPIScale quirks for reliable centering
+        -- AutomaticSize label centered with AnchorPoint — works regardless of InnerFrame height
         local NotifyLabel = Instance.new("TextLabel")
         NotifyLabel.BackgroundTransparency = 1
         NotifyLabel.Font           = Library.Font or Enum.Font.Gotham
@@ -8193,8 +8212,11 @@ do
         NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
         NotifyLabel.TextWrapped    = true
         NotifyLabel.RichText       = true
+        NotifyLabel.AutomaticSize  = Enum.AutomaticSize.Y
         NotifyLabel.Text           = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description)
-        NotifyLabel.Size           = UDim2.new(1, 0, 1, 0)
+        NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
+        NotifyLabel.Position       = UDim2.fromScale(0.5, 0.5)
+        NotifyLabel.Size           = UDim2.new(1, -4, 0, 0)  -- auto-height, full width
         NotifyLabel.ZIndex         = 11003
         NotifyLabel.Parent         = InnerFrame
         Library:AddToRegistry(NotifyLabel, { TextColor3 = "FontColor" })
@@ -9298,7 +9320,8 @@ function Library:CreateWindow(...)
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
-        TabButton.BorderSizePixel = 0
+        TabButton.BorderSizePixel  = 0
+        TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
         do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
            tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; tbs.Parent=TabButton
@@ -10116,7 +10139,8 @@ end
                 Parent = SubBtn;
             })
             Library:AddToRegistry(SubBtnInner, { BackgroundColor3 = "BackgroundColor" })
-            SubBtnInner.BorderSizePixel = 0
+            SubBtnInner.BorderSizePixel  = 0
+            SubBtnInner.ClipsDescendants = true  -- clips SubBtnHighlight to rounded shape
             Instance.new("UICorner", SubBtnInner).CornerRadius = UDim.new(0, 4)
 
             local SubBtnLabel = Library:CreateLabel({
@@ -12025,9 +12049,10 @@ function Library:ApplySidebarLayout()
     TabArea.Visible = false
 
     -- Use narrow width when tab names are hidden, full width otherwise.
-    -- Save pre-sidebar state so RemoveSidebarLayout can restore it
+    -- Save pre-sidebar state (names + icons) so RemoveSidebarLayout can restore it
     if Library._preSidebarNamesVisible == nil then
-        Library._preSidebarNamesVisible = Library._tabNamesVisible  -- nil = visible (default)
+        Library._preSidebarNamesVisible = Library._tabNamesVisible   -- nil = visible (default)
+        Library._preSidebarIconsVisible = Library._iconsVisible or false
     end
 
     local namesHidden = Library._tabNamesVisible == false
@@ -12268,18 +12293,122 @@ function Library:RemoveSidebarLayout()
         local tb = _inner:FindFirstChild("_StarlightHomeBtn")
         if tb then tb.Visible = true end
     end
-    -- Restore pre-sidebar tab names / icons state
+    -- Restore pre-sidebar tab names + icons state
     local preNames = Library._preSidebarNamesVisible   -- nil = default visible
-    local preIcons = Library._preSidebarIconsEnabled   -- nil = default no icons
+    local preIcons = Library._preSidebarIconsVisible   -- nil = default no icons
+    if preIcons ~= nil then Library._iconsVisible = preIcons end
     if preNames == false then
         Library:SetTabNamesVisible(false)
     else
         Library:SetTabNamesVisible(true)
     end
     Library._preSidebarNamesVisible = nil
-    Library._preSidebarIconsEnabled = nil
+    Library._preSidebarIconsVisible = nil
 end
 
+
+-- ── Built-in UI settings tab builder ─────────────────────────────────────────
+-- Call Library:BuildUISettingsTab(tab, wm) to populate a "UI Settings" tab with
+-- the standard layout, keybind-list and watermark controls.
+-- wm = the watermark manager object (must have :Build(), enabled, visible fields).
+function Library:BuildUISettingsTab(tab, wm)
+    local Opts = Library.Options or {}
+    local Togs = Library.Toggles or {}
+
+    -- ── Layout group ─────────────────────────────────────────────────────────
+    local LayoutGroup = tab:AddLeftGroupbox("Layout")
+    LayoutGroup:AddToggle("SidebarToggle", {
+        Text = "Sidebar Layout", Default = false,
+        Callback = function(e)
+            if e then Library:ApplySidebarLayout()
+            else      Library:RemoveSidebarLayout() end
+        end,
+    })
+    LayoutGroup:AddToggle("IconsToggle", {
+        Text = "Show Tab Icons", Default = false,
+        Callback = function(e)
+            Library:SetTabIconsVisible(e)
+            if not e then
+                local htn = Togs["HideTabNamesToggle"]
+                if htn and htn.Value then
+                    htn:SetValue(false)
+                    Library:SetTabNamesVisible(true)
+                end
+            end
+        end,
+    })
+    local NamesDepbox = LayoutGroup:AddDependencyBox()
+    NamesDepbox:AddToggle("HideTabNamesToggle", {
+        Text = "Hide Tab Names", Default = false,
+        Callback = function(e) Library:SetTabNamesVisible(not e) end,
+    })
+    NamesDepbox:SetupDependencies({{ Togs["IconsToggle"], true }})
+
+    -- ── Keybind List group ────────────────────────────────────────────────────
+    local KbBox = tab:AddLeftGroupbox("Keybind List")
+    KbBox:AddToggle("KbShowAll", {
+        Text = "Show All (not just active)", Default = false,
+        Callback = function(v) Library._keybindListShowAll = v end,
+    })
+    KbBox:AddToggle("KbVisible", {
+        Text = "Show Keybind List", Default = true,
+        Callback = function(v)
+            Library._keybindListVisible = v
+            if Library._starlightKbFrame then Library._starlightKbFrame.Visible = v end
+        end,
+    })
+
+    -- ── Watermark group (only if wm is provided) ──────────────────────────────
+    if not wm then return end
+    Library._wm = wm   -- store reference for other Library code
+
+    local WmBox = tab:AddLeftGroupbox("Watermark")
+    WmBox:AddToggle("WmEnabled", {
+        Text = "Show Watermark", Default = true,
+        Callback = function(v) wm.visible = v; wm:Build() end,
+    })
+    local WmDep = WmBox:AddDependencyBox()
+    WmDep:AddToggle("WmFPS",  { Text = "Show FPS",      Default = true,  Callback = function(v) wm.enabled.fps  = v; wm:Build() end })
+    WmDep:AddToggle("WmPing", { Text = "Show Ping",     Default = false, Callback = function(v) wm.enabled.ping = v; wm:Build() end })
+    local PingDep = WmDep:AddDependencyBox()
+    PingDep:AddToggle("WmColorPing", {
+        Text = "Color-Based Ping", Default = false,
+        Callback = function(v) Library._colorPing = v end,
+    })
+    PingDep:SetupDependencies({{ Togs["WmPing"], true }})
+    WmDep:AddToggle("WmUser", { Text = "Show Username", Default = false, Callback = function(v) wm.enabled.user = v; wm:Build() end })
+    WmDep:AddToggle("WmVer",  { Text = "Show Version",  Default = false, Callback = function(v) wm.enabled.ver  = v; wm:Build() end })
+    WmDep:AddLabel("Separator Color"):AddColorPicker("WmSepColor", {
+        Default  = Color3.fromRGB(161, 169, 225),
+        Title    = "Separator Color",
+        Callback = function(v)
+            wm.separatorColor = v
+            if wm.container then
+                for _, child in ipairs(wm.container:GetChildren()) do
+                    if child:IsA("TextLabel") and child.LayoutOrder % 2 == 1 then
+                        local sc = wm.separatorColor
+                        child.Text = string.format('  <font color="rgb(%d,%d,%d)">|</font>  ',
+                            math.floor(sc.R*255), math.floor(sc.G*255), math.floor(sc.B*255))
+                    end
+                end
+            end
+        end,
+    })
+    WmDep:AddDivider()
+    WmDep:AddDropdown("WmTitleAnim", {
+        Text = "Title Animation", Values = {"None","Wave","Matrix"}, Default = 1,
+        Callback = function(v) wm.titleAnim = v; wm:Build(); wm:_rebuildTitleAnim() end,
+    })
+    WmDep:AddSlider("WmAnimSpeed", {
+        Text = "Animation Speed", Default = 1, Min = 0.2, Max = 5, Rounding = 1,
+        Callback = function(v) wm.titleAnimSpeed = v end,
+    })
+    WmDep:AddDivider()
+    WmDep:AddToggle("WmLockElems", { Text = "Lock Element Order",       Default = false, Callback = function(v) wm.lockElems = v; wm:Build() end })
+    WmDep:AddToggle("WmLockPos",   { Text = "Lock Watermark Position",  Default = false, Callback = function(v) wm.lockPos   = v; wm:Build() end })
+    WmDep:SetupDependencies({{ Togs["WmEnabled"], true }})
+end
+Library._colorPing = false   -- used by watermark ping coloring
 -- ── Executor detection ────────────────────────────────────────────────────────
 -- Uses identifyexecutor() from the sUNC standard (supported by most modern executors).
 -- Returns (name: string, version: string).
@@ -12804,6 +12933,25 @@ function Library:_RebuildKeybindList()
     -- Destroy old rows (no conflict with SnowFall — these are entirely our own)
     for _, child in ipairs(cc:GetChildren()) do
         if not child:IsA("UIListLayout") then child:Destroy() end
+    end
+
+    -- Poll-based Hold-mode callback fire: detects state changes and fires when menu is closed
+    if not Library._holdCallbackStates then Library._holdCallbackStates = {} end
+    for _row, picker in pairs(Library._pickerMap) do
+        if picker.Mode == "Hold" then
+            local ok, st = pcall(function() return picker:GetState() end)
+            local newSt  = ok and st == true
+            local prevSt = Library._holdCallbackStates[picker]
+            if prevSt == nil then
+                Library._holdCallbackStates[picker] = newSt  -- init without firing
+            elseif newSt ~= prevSt then
+                Library._holdCallbackStates[picker] = newSt
+                if not Library.Toggled then  -- don't fire while menu is open
+                    Library:SafeCallback(picker.Callback, newSt)
+                    Library:SafeCallback(picker.Clicked,  newSt)
+                end
+            end
+        end
     end
 
     local vis = 0
