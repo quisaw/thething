@@ -2408,13 +2408,19 @@ do
                 end
 
                 if KeyPicker.Mode == "Toggle" then
-                    if HoldingKey then
+                    if HoldingKey and not Library.Toggled then
                         KeyPicker.Toggled = not KeyPicker.Toggled
                         KeyPicker:DoClick()
                     end
                 elseif KeyPicker.Mode == "Press" then
-                    if HoldingKey then
+                    if HoldingKey and not Library.Toggled then
                         KeyPicker:DoClick()
+                    end
+                elseif KeyPicker.Mode == "Hold" and HoldingKey then
+                    -- Fire callback on press (true); release fires false via InputEnded
+                    if not Library.Toggled then
+                        Library:SafeCallback(KeyPicker.Callback, true)
+                        Library:SafeCallback(KeyPicker.Clicked, true)
                     end
                 end
 
@@ -2439,6 +2445,15 @@ do
 
             if (not Picking) then
                 KeyPicker:Update()
+                if KeyPicker.Mode == "Hold" and not Library.Toggled then
+                    local relKey = (Input.UserInputType == Enum.UserInputType.Keyboard)
+                        and Input.KeyCode.Name
+                        or  SpecialKeysInput[Input.UserInputType]
+                    if relKey == KeyPicker.Value then
+                        Library:SafeCallback(KeyPicker.Callback, false)
+                        Library:SafeCallback(KeyPicker.Clicked, false)
+                    end
+                end
             end
         end))
 
@@ -2570,7 +2585,7 @@ do
 
         -- Transparency image taken from https://github.com/matas3535/SplixPrivateDrawingLibrary/blob/main/Library.lua cus i'm lazy
         -- local CheckerFrame =
-        Library:Create("ImageLabel", {
+        local _checkerImg = Library:Create("ImageLabel", {
             BorderSizePixel = 0;
             Size = UDim2.new(0, 27, 0, 13);
             ZIndex = 5;
@@ -2578,6 +2593,7 @@ do
             Visible = not not Info.Transparency;
             Parent = DisplayFrame;
         })
+        Instance.new("UICorner", _checkerImg).CornerRadius = UDim.new(0, 4)  -- match DisplayFrame
 
         -- 1/16/23
         -- Rewrote this to be placed inside the Library ScreenGui
@@ -2616,11 +2632,11 @@ do
         local Highlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 8, 0, 0);   -- inset by 8px corner radius
-            Size = UDim2.new(1, -16, 0, 2);
+            Size = UDim2.new(1, 0, 0, 2);
             ZIndex = 17;
             Parent = PickerFrameInner;
         })
+        Instance.new("UICorner", Highlight).CornerRadius = UDim.new(0, 8)
 
         local SatVibMapOuter = Library:Create("Frame", {
             BorderColor3 = Color3.new(0, 0, 0);
@@ -5957,10 +5973,12 @@ do
                     local gPos = SubFill.AbsoluteSize.X
                     local Diff = mPos - (SubFill.AbsolutePosition.X + gPos)
 
-                    while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1 or Enum.UserInputType.Touch) do
+                    while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
                         local nMPos    = Mouse.X
-                        local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, SubSlider.MaxSize)
-                        local nXScale  = Library:MapValue(nXOffset, 0, SubSlider.MaxSize, 0, 1)
+                        local _maxS    = SubSliderOuter.AbsoluteSize.X - 2  -- read live, avoids stale cache
+                        if _maxS <= 0 then _maxS = SubSlider.MaxSize end
+                        local nXOffset = math.clamp(gPos + (nMPos - mPos) + Diff, 0, _maxS)
+                        local nXScale  = Library:MapValue(nXOffset, 0, _maxS, 0, 1)
                         local nValue   = SubSlider:GetValueFromXScale(nXScale)
                         local OldValue = SubSlider.Value
                         SubSlider.Value = nValue
@@ -7497,11 +7515,11 @@ do
         local Highlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 5, 0, 0);   -- inset by corner radius
-            Size = UDim2.new(1, -10, 0, 2);
+            Size = UDim2.new(1, 0, 0, 2);
             ZIndex = 5;
             Parent = BoxInner;
         })
+        Instance.new("UICorner", Highlight).CornerRadius = UDim.new(0, 5)
 
         Library:AddToRegistry(Highlight, {
             BackgroundColor3 = "AccentColor";
@@ -8165,18 +8183,21 @@ do
             end
         end
 
-        local NotifyLabel = Library:CreateLabel({
-            Position = UDim2.new(0, 0, 0, 0);   -- fill InnerFrame; TextYAlignment handles centering
-            Size     = UDim2.new(1, 0, 1, 0);
-            Text     = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description);
-            TextXAlignment = Enum.TextXAlignment.Center;
-            TextYAlignment = Enum.TextYAlignment.Center;
-            TextSize = 14;
-            ZIndex   = 11003;
-            RichText = true;
-            Parent   = InnerFrame;
-        })
-        NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center  -- override any CreateLabel default
+        -- Direct TextLabel creation bypasses CreateLabel/ApplyDPIScale quirks for reliable centering
+        local NotifyLabel = Instance.new("TextLabel")
+        NotifyLabel.BackgroundTransparency = 1
+        NotifyLabel.Font           = Library.Font or Enum.Font.Gotham
+        NotifyLabel.TextColor3     = Library.FontColor
+        NotifyLabel.TextSize       = 14
+        NotifyLabel.TextXAlignment = Enum.TextXAlignment.Center
+        NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
+        NotifyLabel.TextWrapped    = true
+        NotifyLabel.RichText       = true
+        NotifyLabel.Text           = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description)
+        NotifyLabel.Size           = UDim2.new(1, 0, 1, 0)
+        NotifyLabel.ZIndex         = 11003
+        NotifyLabel.Parent         = InnerFrame
+        Library:AddToRegistry(NotifyLabel, { TextColor3 = "FontColor" })
 
         local _barSide    = string.lower(Library.NotificationBarSide or "left")
         local _forceColor = Library.NotificationForceColor
@@ -8196,19 +8217,16 @@ do
         if _hasSideStripe then
             local _sideAnchor = _barSide == "right" and Vector2.new(1, 0) or Vector2.new(0, 0)
             local _sidePos    = _barSide == "right" and UDim2.new(1, 0, 0, 0) or UDim2.new(0, 0, 0, 0)
-            local _scOffset = 8  -- match NotifyOuter UICorner radius
-            local _scPos = _barSide == "right"
-                and UDim2.new(1, 0, 0, _scOffset)
-                or  UDim2.new(0, 0, 0, _scOffset)
             local SideColor = Library:Create("Frame", {
                 AnchorPoint      = _sideAnchor;
-                Position         = _scPos;          -- inset from top by corner radius
+                Position         = _sidePos;
                 BackgroundColor3 = _accentCol;
                 BorderSizePixel  = 0;
-                Size             = UDim2.new(0, 3, 1, -_scOffset * 2);  -- shrink both ends
+                Size             = UDim2.new(0, 3, 1, 0);
                 ZIndex           = 11004;
                 Parent           = NotifyInner;
             })
+            Instance.new("UICorner", SideColor).CornerRadius = UDim.new(0, 8)  -- match NotifyInner
             if not _forceColor then
                 Library:AddToRegistry(SideColor, { BackgroundColor3 = "AccentColor"; }, true)
             end
@@ -9280,6 +9298,11 @@ function Library:CreateWindow(...)
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
+        TabButton.BorderSizePixel = 0
+        Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
+        do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
+           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; tbs.Parent=TabButton
+           Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
 
         local TabButtonLabel = Library:CreateLabel({
             Position = UDim2.new(0, 0, 0, 0);
@@ -9297,12 +9320,12 @@ function Library:CreateWindow(...)
         local TabHighlight = Library:Create("Frame", {
             BackgroundColor3 = Library.AccentColor;
             BorderSizePixel = 0;
-            Position = UDim2.new(0, 4, 0, 0);   -- inset by corner radius to avoid corner bleed
-            Size = UDim2.new(1, -8, 0, 2);
+            Size = UDim2.new(1, 0, 0, 2);
             ZIndex = 2;
             Visible = false;
             Parent = TabButton;
         })
+        Instance.new("UICorner", TabHighlight).CornerRadius = UDim.new(0, 4)
         Library:AddToRegistry(TabHighlight, { BackgroundColor3 = "AccentColor" })
 
         local Blocker = Library:Create("Frame", {
@@ -9695,11 +9718,11 @@ end
             local Highlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
                 BorderSizePixel = 0;
-                Position = UDim2.new(0, 5, 0, 0);   -- inset by corner radius
-                Size = UDim2.new(1, -10, 0, 2);
+                Size = UDim2.new(1, 0, 0, 2);
                 ZIndex = 5;
                 Parent = BoxInner;
             })
+            Instance.new("UICorner", Highlight).CornerRadius = UDim.new(0, 5)
 
             Library:AddToRegistry(Highlight, {
                 BackgroundColor3 = "AccentColor";
@@ -10142,12 +10165,12 @@ end
             local SubBtnHighlight = Library:Create("Frame", {
                 BackgroundColor3 = Library.AccentColor;
                 BorderSizePixel = 0;
-                Position = UDim2.new(0, 4, 0, 0);   -- inset by corner radius
-                Size = UDim2.new(1, -8, 0, 2);
+                Size = UDim2.new(1, 0, 0, 2);
                 ZIndex = 6;
                 Visible = false;
                 Parent = SubBtnInner;
             })
+            Instance.new("UICorner", SubBtnHighlight).CornerRadius = UDim.new(0, 4)
             Library:AddToRegistry(SubBtnHighlight, { BackgroundColor3 = "AccentColor" })
 
             local SubBtnBlocker = Library:Create("Frame", {
@@ -12002,6 +12025,11 @@ function Library:ApplySidebarLayout()
     TabArea.Visible = false
 
     -- Use narrow width when tab names are hidden, full width otherwise.
+    -- Save pre-sidebar state so RemoveSidebarLayout can restore it
+    if Library._preSidebarNamesVisible == nil then
+        Library._preSidebarNamesVisible = Library._tabNamesVisible  -- nil = visible (default)
+    end
+
     local namesHidden = Library._tabNamesVisible == false
     local curW = namesHidden and _SW_ICON or _SW
 
@@ -12240,6 +12268,16 @@ function Library:RemoveSidebarLayout()
         local tb = _inner:FindFirstChild("_StarlightHomeBtn")
         if tb then tb.Visible = true end
     end
+    -- Restore pre-sidebar tab names / icons state
+    local preNames = Library._preSidebarNamesVisible   -- nil = default visible
+    local preIcons = Library._preSidebarIconsEnabled   -- nil = default no icons
+    if preNames == false then
+        Library:SetTabNamesVisible(false)
+    else
+        Library:SetTabNamesVisible(true)
+    end
+    Library._preSidebarNamesVisible = nil
+    Library._preSidebarIconsEnabled = nil
 end
 
 -- ── Executor detection ────────────────────────────────────────────────────────
@@ -12827,14 +12865,17 @@ function Library:_RebuildKeybindList()
     local w = math.max(220, 0)
     outer.Size    = UDim2.fromOffset(w, vis * 20 + 28)
     local shouldVis = vis > 0 and Library._keybindListVisible ~= false
+    local _kbStroke = outer:FindFirstChildOfClass("UIStroke")
     if shouldVis and not outer.Visible then
         outer.GroupTransparency = 1
         outer.Visible = true
         TweenService:Create(outer, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { GroupTransparency = 0 }):Play()
+        if _kbStroke then TweenService:Create(_kbStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { Transparency = 0 }):Play() end
     elseif not shouldVis and outer.Visible then
         if not Library._kbFadeOut then
             Library._kbFadeOut = true
             TweenService:Create(outer, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { GroupTransparency = 1 }):Play()
+            if _kbStroke then TweenService:Create(_kbStroke, TweenInfo.new(0.25, Enum.EasingStyle.Quad), { Transparency = 1 }):Play() end
             task.delay(0.26, function() Library._kbFadeOut=false; outer.Visible=false end)
         end
     end
