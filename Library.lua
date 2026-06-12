@@ -8747,6 +8747,8 @@ function Library:CreateWindow(...)
         ZIndex = 1;
         Parent = Inner;
     })
+    Library._windowLabel     = WindowLabel
+    Library._windowLabelText = WindowInfo.Title or ""
 
     -- SubTitle (greyer, smaller, same side as Title)
     if hasSubTitle then
@@ -13172,7 +13174,7 @@ function Library:_RebuildTitleAnim()
         c.TextColor3 = lbl.TextColor3
         c.Size = UDim2.fromOffset(charWidths[i], 18)
         c.Position = UDim2.fromOffset(xAcc, 0)
-        c.ZIndex = lbl.ZIndex; c.Parent = lbl
+        c.ZIndex = lbl.ZIndex + 2; c.Parent = lbl
         charData[i] = {lbl=c, orig=ch, x=xAcc}
         table.insert(Library._titleCharLabels, c)
         xAcc = xAcc + charWidths[i]
