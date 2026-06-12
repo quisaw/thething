@@ -3074,6 +3074,7 @@ do
                 rll.VerticalAlignment=Enum.VerticalAlignment.Center
                 rll.Parent=row
 
+                local _stopRainbow = function() end  -- forward-declared; set by rainbow block below
                 local function mkBtn(label, cb)
                     local b = Instance.new("TextButton")
                     b.BackgroundColor3=Library.MainColor; b.AutomaticSize=Enum.AutomaticSize.X
@@ -3109,6 +3110,14 @@ do
                 local rainbowConn   = nil
                 local rainbowSpeed  = 0.003   -- hue units per frame
                 local rbBtn = mkBtn("Rainbow: Off", function() end)
+
+                -- Shared stop function — also called by the final ColorPicker:Hide
+                _stopRainbow = function()
+                    if rainbowConn then rainbowConn:Disconnect(); rainbowConn=nil end
+                    rainbowActive = false
+                    if rbBtn then rbBtn.Text = "  Rainbow: Off  " end
+                end
+
                 rbBtn.MouseButton1Click:Connect(function()
                     rainbowActive = not rainbowActive
                     rbBtn.Text = "  Rainbow: " .. (rainbowActive and "On " or "Off") .. "  "
@@ -3119,7 +3128,7 @@ do
                             RunCallback()
                         end)
                     else
-                        if rainbowConn then rainbowConn:Disconnect(); rainbowConn=nil end
+                        _stopRainbow()
                     end
                 end)
 
@@ -3144,13 +3153,7 @@ do
                     end
                 end)
 
-                -- Stop rainbow when picker closes
-                local _origHide = ColorPicker.Hide
-                function ColorPicker:Hide()
-                    if rainbowConn then rainbowConn:Disconnect(); rainbowConn=nil end
-                    rainbowActive=false; rbBtn.Text="  Rainbow: Off  "
-                    _origHide(self)
-                end
+
             end
 
             PickerFrameOuter.Visible = true
@@ -3158,6 +3161,7 @@ do
         end
 
         function ColorPicker:Hide()
+            pcall(_stopRainbow)  -- stop any active rainbow animation
             PickerFrameOuter.Visible = false
             Library.OpenedFrames[PickerFrameOuter] = nil
         end
@@ -5317,17 +5321,54 @@ do
         local Tooltip
 
         if not Info.Compact then
+            local _txtAlign = ({Left=Enum.TextXAlignment.Left,Center=Enum.TextXAlignment.Center,Right=Enum.TextXAlignment.Right})[Info.TextAlignment or "Left"] or Enum.TextXAlignment.Left
             SliderText = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 10);
+                Size = UDim2.new(1, 0, 0, 14);   -- slightly taller to fit +/- buttons
                 TextSize = 14;
                 Text = Info.Text;
-                TextXAlignment = Enum.TextXAlignment.Left;
-                TextYAlignment = Enum.TextYAlignment.Bottom;
+                TextXAlignment = _txtAlign;
+                TextYAlignment = Enum.TextYAlignment.Center;
                 Visible = Slider.Visible;
                 ZIndex = 5;
                 Parent = Container;
                 RichText = true;
             })
+
+            if not Info.NoPlusMinus then
+                local _step = Slider.Rounding==0 and 1 or (tonumber("1e-"..Slider.Rounding) or 1)
+                local _onRight = Info.TextAlignment ~= "Right"  -- buttons on right unless text is right-aligned
+                local function _mkAboveBtn(lbl, posX, delta)
+                    local b=Instance.new("TextButton")
+                    b.Text=lbl; b.Font=Library.Font; b.TextSize=11
+                    b.TextColor3=Library.FontColor; b.AutoButtonColor=false
+                    b.BackgroundColor3=Library.MainColor; b.BorderSizePixel=0
+                    b.Size=UDim2.fromOffset(16,12)
+                    b.Position=UDim2.new(posX[1],posX[2],0.5,-6)
+                    b.ZIndex=6; b.Parent=SliderText
+                    Instance.new("UICorner",b).CornerRadius=UDim.new(0,3)
+                    Library:AddToRegistry(b,{BackgroundColor3="MainColor";TextColor3="FontColor"})
+                    b.MouseEnter:Connect(function() if not Slider.Disabled then b.BackgroundColor3=Library.AccentColor end end)
+                    b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
+                    b.MouseButton1Click:Connect(function()
+                        if Slider.Disabled then return end
+                        local nv
+                        if Slider.Rounding==0 then nv=math.floor(math.clamp(Slider.Value+delta,Slider.Min,Slider.Max)+0.5)
+                        else nv=tonumber(string.format("%."..Slider.Rounding.."f",math.clamp(Slider.Value+delta,Slider.Min,Slider.Max))) end
+                        if nv~=Slider.Value then
+                            Slider.Value=nv; Slider:Display()
+                            Library:SafeCallback(Slider.Callback,Slider.Value)
+                            Library:SafeCallback(Slider.Changed,Slider.Value)
+                        end
+                    end)
+                end
+                if _onRight then
+                    _mkAboveBtn("−",{1,-34},  -_step)
+                    _mkAboveBtn("+",{1,-17},   _step)
+                else
+                    _mkAboveBtn("+",{0,1},     _step)
+                    _mkAboveBtn("−",{0,18},   -_step)
+                end
+            end
 
             table.insert(Blanks, Groupbox:AddBlank(3, Slider.Visible))
         end
@@ -5342,8 +5383,7 @@ do
         })
 
         SliderOuter:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-            local _btnW = Info.NoPlusMinus and 0 or 36
-            Slider.MaxSize = SliderOuter.AbsoluteSize.X - _btnW - 2
+            Slider.MaxSize = SliderOuter.AbsoluteSize.X - 2
         end)
 
         Library:AddToRegistry(SliderOuter, {
@@ -5352,14 +5392,11 @@ do
         SliderOuter.BorderSizePixel = 0
         Instance.new("UICorner", SliderOuter).CornerRadius = UDim.new(0, 4)
 
-        -- +/− buttons sit on the right edge of SliderOuter, shrink SliderInner to fit
-        local _sliderBtnW = Info.NoPlusMinus and 0 or 36  -- 0 if developer opts out
-
         local SliderInner = Library:Create("Frame", {
             BackgroundColor3 = Library.MainColor;
             BorderColor3 = Library.OutlineColor;
             BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(1, -_sliderBtnW, 1, 0);
+            Size = UDim2.new(1, 0, 1, 0);   -- full width (buttons are above, not beside)
             ZIndex = 6;
             Parent = SliderOuter;
         })
@@ -5410,46 +5447,6 @@ do
             Parent = SliderInner;
             RichText = true;
         })
-
-        -- +/− step buttons
-        if not Info.NoPlusMinus then
-            local _step = Slider.Rounding == 0 and 1
-                or tonumber("1e-"..tostring(Slider.Rounding)) or 1
-
-            local function _mkStepBtn(label, xOff, delta)
-                local b = Instance.new("TextButton")
-                b.Text = label; b.Font = Library.Font; b.TextSize = 13
-                b.TextColor3 = Library.FontColor; b.AutoButtonColor = false
-                b.BackgroundColor3 = Library.MainColor; b.BorderSizePixel = 0
-                b.Size = UDim2.new(0, 17, 1, 0)
-                b.Position = UDim2.new(1, xOff, 0, 0)
-                b.ZIndex = 9; b.Parent = SliderOuter
-                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 3)
-                Library:AddToRegistry(b, { BackgroundColor3 = "MainColor"; TextColor3 = "FontColor" })
-                b.MouseEnter:Connect(function() if not Slider.Disabled then b.BackgroundColor3=Library.AccentColor end end)
-                b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
-                b.MouseButton1Click:Connect(function()
-                    if Slider.Disabled then return end
-                    local newVal
-                    if Slider.Rounding == 0 then
-                        newVal = math.clamp(Slider.Value + delta, Slider.Min, Slider.Max)
-                    else
-                        local fmt = "%." .. tostring(Slider.Rounding) .. "f"
-                        newVal = tonumber(string.format(fmt,
-                            math.clamp(Slider.Value + delta, Slider.Min, Slider.Max)))
-                    end
-                    if newVal ~= Slider.Value then
-                        Slider.Value = newVal; Slider:Display()
-                        Library:SafeCallback(Slider.Callback, Slider.Value)
-                        Library:SafeCallback(Slider.Changed,  Slider.Value)
-                    end
-                end)
-                return b
-            end
-
-            _mkStepBtn("−", -35, -_step)
-            _mkStepBtn("+", -18, _step)
-        end
 
         Library:OnHighlight(SliderOuter, SliderOuter,
             { BorderColor3 = "AccentColor" },
@@ -5825,17 +5822,45 @@ do
             local SubSliderTextLabel = nil
             if not _subCompact then
                 SubSliderTextLabel = Library:CreateLabel({
-                    Size           = UDim2.new(1, 0, 0, 10);
-                    Position       = UDim2.new(0, 0, 0, -13);
+                    Size           = UDim2.new(1, 0, 0, 14);   -- taller for +/- buttons
+                    Position       = UDim2.new(0, 0, 0, -16);
                     TextSize       = 14;
                     Text           = SubInfo.Text;
                     TextXAlignment = Enum.TextXAlignment.Left;
-                    TextYAlignment = Enum.TextYAlignment.Bottom;
+                    TextYAlignment = Enum.TextYAlignment.Center;
                     Visible        = SubSlider.Visible;
                     ZIndex         = 5;
                     Parent         = SubSliderOuter;
                     RichText       = true;
                 })
+                if not SubInfo.NoPlusMinus then
+                    local _sstep = SubSlider.Rounding==0 and 1 or (tonumber("1e-"..SubSlider.Rounding) or 1)
+                    local function _mkSB(lbl, xOff, delta)
+                        local b=Instance.new("TextButton")
+                        b.Text=lbl; b.Font=Library.Font; b.TextSize=11
+                        b.TextColor3=Library.FontColor; b.AutoButtonColor=false
+                        b.BackgroundColor3=Library.MainColor; b.BorderSizePixel=0
+                        b.Size=UDim2.fromOffset(16,12)
+                        b.Position=UDim2.new(1,xOff,0.5,-6)
+                        b.ZIndex=6; b.Parent=SubSliderTextLabel
+                        Instance.new("UICorner",b).CornerRadius=UDim.new(0,3)
+                        Library:AddToRegistry(b,{BackgroundColor3="MainColor";TextColor3="FontColor"})
+                        b.MouseEnter:Connect(function() if not SubSlider.Disabled then b.BackgroundColor3=Library.AccentColor end end)
+                        b.MouseLeave:Connect(function() b.BackgroundColor3=Library.MainColor end)
+                        b.MouseButton1Click:Connect(function()
+                            if SubSlider.Disabled then return end
+                            local nv
+                            if SubSlider.Rounding==0 then nv=math.floor(math.clamp(SubSlider.Value+delta,SubSlider.Min,SubSlider.Max)+0.5)
+                            else nv=tonumber(string.format("%."..SubSlider.Rounding.."f",math.clamp(SubSlider.Value+delta,SubSlider.Min,SubSlider.Max))) end
+                            if nv~=SubSlider.Value then
+                                SubSlider.Value=nv; SubSlider:Display()
+                                Library:SafeCallback(SubSlider.Callback,SubSlider.Value)
+                                Library:SafeCallback(SubSlider.Changed,SubSlider.Value)
+                            end
+                        end)
+                    end
+                    _mkSB("−",-34,-_sstep); _mkSB("+", -17, _sstep)
+                end
             end
 
             SubSliderOuter:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
@@ -8279,11 +8304,12 @@ do
         NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
         NotifyLabel.TextWrapped    = true
         NotifyLabel.RichText       = true
-        NotifyLabel.AutomaticSize  = Enum.AutomaticSize.Y
+        NotifyLabel.TextWrapped    = false                    -- prevent reflow during expand animation
+        NotifyLabel.TextTruncate   = Enum.TextTruncate.AtEnd  -- reveal text as frame grows
         NotifyLabel.Text           = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description)
         NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
         NotifyLabel.Position       = UDim2.fromScale(0.5, 0.5)
-        NotifyLabel.Size           = UDim2.new(1, -4, 0, 0)  -- auto-height, full width
+        NotifyLabel.Size           = UDim2.new(1, -4, 0, 16)  -- fixed single-line height
         NotifyLabel.ZIndex         = 11003
         NotifyLabel.Parent         = InnerFrame
         Library:AddToRegistry(NotifyLabel, { TextColor3 = "FontColor" })
@@ -9390,9 +9416,6 @@ function Library:CreateWindow(...)
         TabButton.BorderSizePixel  = 0
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
-        do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
-           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Border; tbs.Parent=TabButton
-           Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
 
         local TabButtonLabel = Library:CreateLabel({
             Position = UDim2.new(0, 0, 0, 0);
@@ -13276,7 +13299,6 @@ local function _ensureKbFrame()
     local ll = Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Parent=cc
     local kbPad = Instance.new("UIPadding")
-    kbPad.PaddingLeft=UDim.new(0,4); kbPad.PaddingRight=UDim.new(0,4)   -- match "Keybinds" title offset
     kbPad.PaddingTop=UDim.new(0,2); kbPad.PaddingBottom=UDim.new(0,3)
     kbPad.Parent = cc
 
@@ -13359,26 +13381,15 @@ function Library:_RebuildKeybindList()
         rowFrame.LayoutOrder = vis + 1
         rowFrame.Parent      = cc
 
-        -- Colour-coded indicator square
-        local box = Instance.new("Frame")
-        box.BackgroundColor3 = active and Color3.fromRGB(161,169,225) or Color3.fromRGB(55,58,66)
-        box.BorderSizePixel  = 0
-        box.AnchorPoint      = Vector2.new(0, 0.5)
-        box.Position         = UDim2.new(0, 0, 0.5, 0)
-        box.Size             = UDim2.fromOffset(12, 12)
-        box.ZIndex           = 103
-        box.Parent           = rowFrame
-        Instance.new("UICorner", box).CornerRadius = UDim.new(0, 2)
-
-        -- Text: "[MB2] Feature (Toggle)"
+        -- Text: "[MB2] Feature (Toggle)" — starts at x=4 matching "Keybinds" title K
         local lbl = Instance.new("TextLabel")
         lbl.BackgroundTransparency = 1
         lbl.Font       = Library.Font or Enum.Font.Gotham
         lbl.TextSize   = 13
         lbl.TextColor3 = active and Color3.fromRGB(220,220,235) or Color3.fromRGB(165,165,165)
         lbl.Text       = txt
-        lbl.Size       = UDim2.new(1,-18,1,0)
-        lbl.Position   = UDim2.new(0,16,0,0)
+        lbl.Size       = UDim2.new(1,-4,1,0)
+        lbl.Position   = UDim2.new(0,4,0,0)   -- 4px = aligns "K" in row with "K" in "Keybinds"
         lbl.TextXAlignment = Enum.TextXAlignment.Left
         lbl.ZIndex     = 102
         lbl.Parent     = rowFrame
