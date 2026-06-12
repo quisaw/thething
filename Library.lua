@@ -12708,6 +12708,7 @@ function WM:_rebuildTitleAnim()
     local outer=self.container; local mainLbl=self.labels["script"]
     if not outer or not mainLbl or self.titleAnim=="None" then return end
     mainLbl.Text=""; local titleStr=Library._wmTitle; local t0=tick()
+    self._t0 = t0  -- store phase reference so title sync can match it
     local colorFunc=self.titleColorFunc; local font=Library.Font or Enum.Font.Gotham
     local TS=cloneref(game:GetService("TextService"))
     local SYMBOLS={"#","@","$","%","&","*","!","?","/","+","=","~","^","<",">"}
@@ -12777,6 +12778,11 @@ function WM:_rebuildTitleAnim()
         end)
     end
 end  -- WM:_rebuildTitleAnim
+
+-- If title is synced, rebuild it too so type/speed/phase all match
+    if Library.TitleAnimConfig and Library.TitleAnimConfig.sync then
+        task.defer(function() Library:_RebuildTitleAnim() end)
+    end
 
 end  -- do WM=Library.WM block
 
@@ -13236,6 +13242,12 @@ function Library:SetTitleAnimSpeed(spd)
 end
 function Library:SetTitleAnimSync(enabled)
     Library.TitleAnimConfig.sync = enabled
+    if enabled and Library.WM then
+        -- Adopt WM's current settings immediately so they match from the start
+        Library.TitleAnimConfig.anim  = Library.WM.titleAnim
+        Library.TitleAnimConfig.speed = Library.WM.titleAnimSpeed or 1
+        Library.TitleAnimConfig.dir   = Library.WM.titleAnimDir or "Left to Right"
+    end
     Library:_RebuildTitleAnim()
 end
 -- ── Executor detection ────────────────────────────────────────────────────────
