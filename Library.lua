@@ -8329,7 +8329,7 @@ do
         NotifyLabel.MaxVisibleGraphemes = 0  -- hidden until letter-by-letter reveal
         NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
         NotifyLabel.Position       = UDim2.fromScale(0.5, 0.5)
-        NotifyLabel.Size           = UDim2.new(1, -4, 1, -4)
+        NotifyLabel.Size           = UDim2.new(1, 0, 1, 0)  -- fill InnerFrame; TextYAlignment.Center handles vertical
         NotifyLabel.ZIndex         = 11003
         NotifyLabel.Parent         = InnerFrame
         Library:AddToRegistry(NotifyLabel, { TextColor3 = "FontColor" })
@@ -12777,12 +12777,11 @@ function WM:_rebuildTitleAnim()
             end
         end)
     end
-end  -- WM:_rebuildTitleAnim
-
--- If title is synced, rebuild it too so type/speed/phase all match
+    -- If title is synced, rebuild it synchronously so anim type/phase match immediately
     if Library.TitleAnimConfig and Library.TitleAnimConfig.sync then
-        task.defer(function() Library:_RebuildTitleAnim() end)
+        Library:_RebuildTitleAnim()
     end
+end  -- WM:_rebuildTitleAnim
 
 end  -- do WM=Library.WM block
 
@@ -13082,7 +13081,11 @@ function Library:SetTabFill(enabled)
     end
     if #buttons == 0 then return end
     if enabled then
-        -- AbsoluteSize may be 0 on first frame; defer one tick
+        -- Save originals before resizing so disable can restore them
+        if not Library._origTabSizes then
+            Library._origTabSizes = {}
+            for _, b in ipairs(buttons) do Library._origTabSizes[b] = b.Size end
+        end
         task.defer(function()
             if not Library._TabArea then return end
             local ll  = Library._TabListLayout
@@ -13094,6 +13097,16 @@ function Library:SetTabFill(enabled)
                 b.Size = UDim2.new(0, w, b.Size.Y.Scale, b.Size.Y.Offset)
             end
         end)
+    else
+        -- Restore original sizes
+        if Library._origTabSizes then
+            for _, b in ipairs(buttons) do
+                if Library._origTabSizes[b] then
+                    b.Size = Library._origTabSizes[b]
+                end
+            end
+            Library._origTabSizes = nil
+        end
     end
 end
 
