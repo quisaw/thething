@@ -8259,6 +8259,23 @@ do
         local TextSizeOffsetX = -4
         local TextSizeOffsetY = -4
 
+        -- Support raw image asset IDs via Data.Image (e.g. "rbxassetid://...")
+        if Data.Image and Data.Image ~= "" then
+            ExtraWidth = ExtraWidth + 24
+            TextSizeOffsetX = TextSizeOffsetX - 24
+            if Side == "left" then TextPosition = UDim2.new(0, 30, 0, 0) end
+            Library:Create("ImageLabel", {
+                BackgroundTransparency = 1;
+                AnchorPoint = Vector2.new(0, 0.5);
+                Position = UDim2.new(0, 6, 0.5, 0);
+                Size = UDim2.fromOffset(20, 20);
+                Image = Data.Image;
+                ImageColor3 = Data.ImageColor or Color3.new(1,1,1);
+                ZIndex = 11004;
+                Parent = InnerFrame;
+            })
+        end
+
         local IconLabel
         if Data.Icon then
             local ParsedIcon = Library:GetCustomIcon(Data.Icon)
@@ -9431,10 +9448,7 @@ function Library:CreateWindow(...)
         TabButton.BorderSizePixel  = 0
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
-        do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
-           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual  -- Contextual hugs the UICorner shape
-           tbs.Parent=TabButton
-           Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
+        -- No UIStroke on TabButton; TabHighlight accent bar is sufficient as active indicator
 
         local TabButtonLabel = Library:CreateLabel({
             Position = UDim2.new(0, 0, 0, 0);
@@ -9879,11 +9893,11 @@ end
             local _collapsed = Info.Collapsed == true
             local colBtn = Instance.new("TextButton")
             colBtn.Text = _collapsed and "▶" or "▼"
-            colBtn.Size = UDim2.fromOffset(16, 14)
-            colBtn.Position = UDim2.new(1, -18, 0, 3)
+            colBtn.Size = UDim2.fromOffset(18, 16)
+            colBtn.Position = UDim2.new(1, -20, 0, 2)
             colBtn.BackgroundTransparency = 1
             colBtn.TextColor3 = Library.FontColor
-            colBtn.Font = Library.Font; colBtn.TextSize = 10
+            colBtn.Font = Library.Font; colBtn.TextSize = 12
             colBtn.ZIndex = 7; colBtn.Parent = BoxInner
             Library:AddToRegistry(colBtn, { TextColor3 = "FontColor" })
 
@@ -12502,7 +12516,8 @@ Library.WM = {
     savedPos       = UDim2.new(1,-8,0,8); container=nil; labels={};
     _conns={}; elemDragActive=false;
     separatorColor = Color3.fromRGB(161,169,225);
-    titleAnim="None"; titleAnimSpeed=1; _animConn=nil; _charLabels={};
+    titleAnim="None"; titleAnimSpeed=1; titleAnimDir="Left to Right";
+    _animConn=nil; _charLabels={};
     titleColor=nil; titleColorFunc=nil;   -- developer colour API
 }
 
@@ -12704,11 +12719,36 @@ function WM:_rebuildTitleAnim()
         xAcc=xAcc+charWidths[i]
     end
     if self.titleAnim=="Wave" then
-        local AMP=3
+        local AMP=3; local N=#charData
+        local dir = self.titleAnimDir or "Left to Right"
         self._animConn=RunService.RenderStepped:Connect(function()
             local spd=self.titleAnimSpeed or 1; local t=(tick()-t0)*spd
             for i,d in ipairs(charData) do
-                d.lbl.Position=UDim2.fromOffset(d.x,math.floor(math.sin(t*4-i*0.55)*AMP+0.5))
+                local phase
+                if dir=="Right to Left" then
+                    phase = t*4 + i*0.55          -- phase advances rightward → wave moves left
+                elseif dir=="Center Out" then
+                    local dist = math.abs(i-(N+1)/2) * 0.55
+                    phase = t*4 - dist             -- centre leads, edges trail (ripple outward)
+                else                               -- "Left to Right" (default)
+                    phase = t*4 - i*0.55
+                end
+                d.lbl.Position=UDim2.fromOffset(d.x, math.floor(math.sin(phase)*AMP+0.5))
+            end
+        end)
+    elseif self.titleAnim=="Scroll" then
+        -- Ticker: text scrolls right-to-left on a fixed-width clip window
+        local tickerW = math.min(totalW, 72)   -- visible window width (px)
+        mainLbl.AutomaticSize  = Enum.AutomaticSize.None
+        mainLbl.Size           = UDim2.fromOffset(tickerW, 16)
+        mainLbl.ClipsDescendants = true
+        local scrollX = tickerW  -- start text off-screen to the right
+        self._animConn=RunService.RenderStepped:Connect(function()
+            local spd = self.titleAnimSpeed or 1
+            scrollX = scrollX - 1.4 * spd
+            if scrollX < -totalW then scrollX = tickerW end   -- wrap back
+            for _,d in ipairs(charData) do
+                d.lbl.Position = UDim2.fromOffset(d.x + scrollX, 0)
             end
         end)
     elseif self.titleAnim=="Matrix" then
@@ -12841,9 +12881,16 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
     })
     WmDep:AddDivider()
     WmDep:AddDropdown("WmTitleAnim", {
-        Text = "Title Animation", Values = {"None","Wave","Matrix"}, Default = 1,
+        Text = "Title Animation", Values = {"None","Wave","Matrix","Scroll"}, Default = 1,
         Callback = function(v) wm.titleAnim = v; wm:Build(); wm:_rebuildTitleAnim() end,
     })
+    -- Wave direction: only relevant when Wave is selected
+    local WaveDepbox = WmDep:AddDependencyBox()
+    WaveDepbox:AddDropdown("WmWaveDir", {
+        Text = "Wave Direction", Values = {"Left to Right","Right to Left","Center Out"}, Default = 1,
+        Callback = function(v) wm.titleAnimDir = v end,
+    })
+    WaveDepbox:SetupDependencies({{ Opts["WmTitleAnim"], "Wave" }})
     WmDep:AddSlider("WmAnimSpeed", {
         Text = "Animation Speed", Default = 1, Min = 0.2, Max = 5, Rounding = 1,
         Callback = function(v) wm.titleAnimSpeed = v end,
