@@ -8302,14 +8302,13 @@ do
         NotifyLabel.TextSize       = 14
         NotifyLabel.TextXAlignment = Enum.TextXAlignment.Center
         NotifyLabel.TextYAlignment = Enum.TextYAlignment.Center
-        NotifyLabel.TextWrapped    = true
+        NotifyLabel.TextWrapped    = true   -- allow normal wrapping once revealed
         NotifyLabel.RichText       = true
-        NotifyLabel.TextWrapped    = false                    -- prevent reflow during expand animation
-        NotifyLabel.TextTruncate   = Enum.TextTruncate.AtEnd  -- reveal text as frame grows
         NotifyLabel.Text           = (Data.Title == "" and "" or "[" .. Data.Title .. "] ") .. tostring(Data.Description)
+        NotifyLabel.MaxVisibleGraphemes = 0  -- hidden until letter-by-letter reveal
         NotifyLabel.AnchorPoint    = Vector2.new(0.5, 0.5)
         NotifyLabel.Position       = UDim2.fromScale(0.5, 0.5)
-        NotifyLabel.Size           = UDim2.new(1, -4, 0, 16)  -- fixed single-line height
+        NotifyLabel.Size           = UDim2.new(1, -4, 1, -4)
         NotifyLabel.ZIndex         = 11003
         NotifyLabel.Parent         = InnerFrame
         Library:AddToRegistry(NotifyLabel, { TextColor3 = "FontColor" })
@@ -8375,7 +8374,21 @@ do
         function Data:Resize()
             XSize, YSize = Library:GetTextBounds(NotifyLabel.Text, Library.Font, 14)
             YSize = YSize + 7
+            NotifyLabel.MaxVisibleGraphemes = 0  -- reset on each resize
             _TweenNotify(NotifyOuter, UDim2.new(0, XSize * DPIScale + 8 + 4 + ExtraWidth, 0, YSize))
+            -- Letter-by-letter reveal after expand animation completes
+            task.spawn(function()
+                task.wait(0.35)
+                if not NotifyOuter.Parent then return end
+                local text    = NotifyLabel.Text
+                local fullLen = utf8.len(text) or #text
+                local delay   = math.clamp(0.5 / math.max(fullLen, 1), 0.008, 0.04)
+                for i = 1, fullLen do
+                    if not NotifyOuter.Parent then break end
+                    NotifyLabel.MaxVisibleGraphemes = i
+                    task.wait(delay)
+                end
+            end)
         end
 
         function Data:ChangeTitle(NewText)
@@ -9416,6 +9429,10 @@ function Library:CreateWindow(...)
         TabButton.BorderSizePixel  = 0
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
+        do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
+           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Inset  -- Inset: no 0.5px overflow below button
+           tbs.Parent=TabButton
+           Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
 
         local TabButtonLabel = Library:CreateLabel({
             Position = UDim2.new(0, 0, 0, 0);
@@ -9856,11 +9873,24 @@ end
             -- Optional icon in the groupbox header
             Library:_ApplyTabIcon(GroupboxLabel, BoxInner, Info.Icon, Info.IconSide, Info.IconColor, 6)
 
+            -- ── Collapse toggle ──────────────────────────────────────────────
+            local _collapsed = Info.Collapsed == true
+            local colBtn = Instance.new("TextButton")
+            colBtn.Text = _collapsed and "▶" or "▼"
+            colBtn.Size = UDim2.fromOffset(16, 14)
+            colBtn.Position = UDim2.new(1, -18, 0, 3)
+            colBtn.BackgroundTransparency = 1
+            colBtn.TextColor3 = Library.FontColor
+            colBtn.Font = Library.Font; colBtn.TextSize = 10
+            colBtn.ZIndex = 7; colBtn.Parent = BoxInner
+            Library:AddToRegistry(colBtn, { TextColor3 = "FontColor" })
+
             local Container = Library:Create("Frame", {
                 BackgroundTransparency = 1;
                 Position = UDim2.new(0, 5, 0, 20);   -- 5px uniform padding
                 Size = UDim2.new(1, -10, 1, -20);
                 ZIndex = 1;
+                Visible = not _collapsed;
                 Parent = BoxInner;
             })
 
@@ -9871,16 +9901,26 @@ end
             })
 
             function Groupbox:Resize()
+                if not Container.Visible then
+                    BoxOuter.Size = UDim2.new(1, 0, 0, 26)  -- header only when collapsed
+                    return
+                end
                 local Size = 0
-
                 for _, Element in next, Groupbox.Container:GetChildren() do
                     if Element:IsA("GuiObject") and Element.Visible then
                         Size = Size + Element.Size.Y.Offset
                     end
                 end
-
                 BoxOuter.Size = UDim2.new(1, 0, 0, (20 * DPIScale + Size) + 2 + 8)
             end
+
+            -- Wire up collapse toggle
+            colBtn.MouseButton1Click:Connect(function()
+                _collapsed = not _collapsed
+                colBtn.Text = _collapsed and "▶" or "▼"
+                Container.Visible = not _collapsed
+                Groupbox:Resize()
+            end)
 
             Groupbox.Container = Container
             setmetatable(Groupbox, BaseGroupbox)
@@ -12619,6 +12659,10 @@ function WM:Build()
         end)
         table.insert(self._conns,mc2); table.insert(self._conns,ec2)
     end
+    -- Restart animation after any rebuild (element drag calls Build() on drop)
+    if self.titleAnim ~= "None" then
+        task.defer(function() self:_rebuildTitleAnim() end)
+    end
 end  -- WM:Build
 
 function WM:Update()
@@ -12808,6 +12852,110 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
     WmDep:SetupDependencies({{ Togs["WmEnabled"], true }})
 end
 Library._colorPing = false   -- used by watermark ping coloring
+
+-- ── Position saving / loading (call Library:SetupPositionSaving(SaveManager)) ─
+function Library:SetupPositionSaving(saveMgr)
+    if not saveMgr then return end
+
+    local HS = game:GetService("HttpService")
+    local VER_FOLDER = saveMgr.Folder or "MyScriptHub"
+
+    local function _savePos()
+        pcall(function()
+            local d = {}
+            local wm = Library.WM
+            if wm and wm.savedPos then
+                local p=wm.savedPos; d.wm={p.X.Scale,p.X.Offset,p.Y.Scale,p.Y.Offset}
+            end
+            local kbf = Library._starlightKbFrame
+            if kbf then
+                local p=kbf.Position; d.kb={p.X.Scale,p.X.Offset,p.Y.Scale,p.Y.Offset}
+            end
+            if writefile then
+                writefile(VER_FOLDER.."/positions.json", HS:JSONEncode(d))
+            end
+        end)
+    end
+
+    local function _loadPos()
+        pcall(function()
+            local f = VER_FOLDER.."/positions.json"
+            if not (isfile and isfile(f)) then return end
+            local d = HS:JSONDecode(readfile(f))
+            if d.wm and Library.WM then
+                Library.WM.savedPos = UDim2.new(d.wm[1],d.wm[2],d.wm[3],d.wm[4])
+                if Library.WM.container then Library.WM.container.Position = Library.WM.savedPos end
+            end
+            if d.kb and Library._starlightKbFrame then
+                Library._starlightKbFrame.Position = UDim2.new(d.kb[1],d.kb[2],d.kb[3],d.kb[4])
+            end
+        end)
+    end
+
+    _loadPos()
+
+    -- Hook SaveManager so positions are saved whenever a config is saved/loaded
+    local _oS = saveMgr.Save
+    saveMgr.Save = function(self, ...) local ok,r=pcall(_oS,self,...); _savePos(); return ok,r end
+    local _oL = saveMgr.Load
+    saveMgr.Load = function(self, ...) local ok,r=pcall(_oL,self,...); _loadPos(); return ok,r end
+
+    -- Auto-track WM and keybind frame position changes
+    local _sp = false
+    local function _debounceSave()
+        if not _sp then _sp=true; task.delay(1,function() _savePos(); _sp=false end) end
+    end
+    task.spawn(function()
+        -- WM: watch for container creation (Build may run later)
+        while not (Library.WM and Library.WM.container) do task.wait(0.5) end
+        Library.WM.container:GetPropertyChangedSignal("Position"):Connect(function()
+            Library.WM.savedPos = Library.WM.container.Position; _debounceSave()
+        end)
+    end)
+    task.defer(function()
+        local kbf = Library._starlightKbFrame
+        if kbf then
+            kbf:GetPropertyChangedSignal("Position"):Connect(function() _debounceSave() end)
+        end
+    end)
+
+    Library._savePositions = _savePos
+end
+
+-- ── Update / version check (call Library:SetupVersionCheck({...})) ────────────
+function Library:SetupVersionCheck(config)
+    if not config then return end
+    task.spawn(function()
+        local folder   = config.Folder or "MyScriptHub"
+        local VER_FILE = folder .. "/lastBuild.txt"
+        local lastSHA  = nil
+        pcall(function()
+            if isfile and isfile(VER_FILE) then
+                lastSHA = readfile(VER_FILE):match("^%s*(.-)%s*$")
+            end
+        end)
+        local ok, resp = pcall(function()
+            return game:HttpGet(string.format(
+                "https://api.github.com/repos/%s/%s/commits/%s",
+                config.Owner, config.Repo, config.Branch or "main"))
+        end)
+        if not ok or not resp then return end
+        local ok2, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(resp)
+        end)
+        if not ok2 or not data or not data.sha then return end
+        local latestSHA = data.sha:sub(1, 7)
+        pcall(function() if writefile then writefile(VER_FILE, latestSHA) end end)
+        if lastSHA ~= nil and lastSHA ~= latestSHA then
+            Library:Notify({
+                Title       = "Update Available",
+                Description = "Running: " .. lastSHA .. "  →  Latest: " .. latestSHA,
+                Duration    = 8,
+            })
+        end
+    end)
+end
+
 -- ── Executor detection ────────────────────────────────────────────────────────
 -- Uses identifyexecutor() from the sUNC standard (supported by most modern executors).
 -- Returns (name: string, version: string).
