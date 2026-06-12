@@ -8259,21 +8259,23 @@ do
         local TextSizeOffsetX = -4
         local TextSizeOffsetY = -4
 
-        -- Support raw image asset IDs via Data.Image (e.g. "rbxassetid://...")
+        -- Raw image asset ID support (parented to NotifyInner to avoid InnerFrame ClipsDescendants)
         if Data.Image and Data.Image ~= "" then
-            ExtraWidth = ExtraWidth + 24
-            TextSizeOffsetX = TextSizeOffsetX - 24
-            if Side == "left" then TextPosition = UDim2.new(0, 30, 0, 0) end
-            Library:Create("ImageLabel", {
-                BackgroundTransparency = 1;
-                AnchorPoint = Vector2.new(0, 0.5);
-                Position = UDim2.new(0, 6, 0.5, 0);
-                Size = UDim2.fromOffset(20, 20);
-                Image = Data.Image;
-                ImageColor3 = Data.ImageColor or Color3.new(1,1,1);
-                ZIndex = 11004;
-                Parent = InnerFrame;
-            })
+            local _isz, _ipad = 20, 5
+            local imgLbl = Instance.new("ImageLabel")  -- Instance.new avoids DPI scaling
+            imgLbl.BackgroundTransparency = 1
+            imgLbl.AnchorPoint = Vector2.new(0, 0.5)
+            imgLbl.Position    = UDim2.new(0, _ipad, 0.5, 0)
+            imgLbl.Size        = UDim2.fromOffset(_isz, _isz)
+            imgLbl.Image       = Data.Image
+            imgLbl.ImageColor3 = Data.ImageColor or Color3.new(1, 1, 1)
+            imgLbl.ZIndex      = 11006
+            imgLbl.Parent      = NotifyInner   -- outside InnerFrame to avoid clipping
+            -- Shift InnerFrame right to give the icon space
+            local _shift = _isz + _ipad * 2
+            InnerFrame.Position = UDim2.new(0, _shift + 1, 0, 1)
+            InnerFrame.Size     = UDim2.new(1, -_shift - 2, 1, -2)
+            ExtraWidth = ExtraWidth + _shift   -- Data:Resize() uses this
         end
 
         local IconLabel
@@ -9404,8 +9406,9 @@ function Library:CreateWindow(...)
         if not Window._TabOrder then Window._TabOrder = {} end
         table.insert(Window._TabOrder, Name)
 
-        local _iSide  = (typeof(IconOptions) == "table" and IconOptions.IconSide)  or nil
-        local _iColor = (typeof(IconOptions) == "table" and IconOptions.IconColor)  or nil
+        local _iSide    = (typeof(IconOptions) == "table" and IconOptions.IconSide)   or nil
+        local _iColor   = (typeof(IconOptions) == "table" and IconOptions.IconColor)  or nil
+        local _noBorder = (typeof(IconOptions) == "table" and IconOptions.NoBorder)   or false
 
         local Tab = {
             Groupboxes = {};
@@ -9448,7 +9451,11 @@ function Library:CreateWindow(...)
         TabButton.BorderSizePixel  = 0
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
-        -- No UIStroke on TabButton; TabHighlight accent bar is sufficient as active indicator
+        if not _noBorder then
+            do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
+               tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual; tbs.Parent=TabButton
+               Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
+        end
 
         local TabButtonLabel = Library:CreateLabel({
             Position = UDim2.new(0, 0, 0, 0);
@@ -12720,8 +12727,8 @@ function WM:_rebuildTitleAnim()
     end
     if self.titleAnim=="Wave" then
         local AMP=3; local N=#charData
-        local dir = self.titleAnimDir or "Left to Right"
         self._animConn=RunService.RenderStepped:Connect(function()
+            local dir = self.titleAnimDir or "Left to Right"  -- read live so UI changes take effect
             local spd=self.titleAnimSpeed or 1; local t=(tick()-t0)*spd
             for i,d in ipairs(charData) do
                 local phase
@@ -12888,7 +12895,10 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
     local WaveDepbox = WmDep:AddDependencyBox()
     WaveDepbox:AddDropdown("WmWaveDir", {
         Text = "Wave Direction", Values = {"Left to Right","Right to Left","Center Out"}, Default = 1,
-        Callback = function(v) wm.titleAnimDir = v end,
+        Callback = function(v)
+            wm.titleAnimDir = v
+            if wm.titleAnim == "Wave" then wm:_rebuildTitleAnim() end
+        end,
     })
     WaveDepbox:SetupDependencies({{ Opts["WmTitleAnim"], "Wave" }})
     WmDep:AddSlider("WmAnimSpeed", {
@@ -13186,7 +13196,7 @@ function Library:SetupHomeTab(Window, config)
         dotCol = "rgb(220,80,80)"; dotChar = "✕"; statusText = "Unsupported"
     end
 
-    local tab = Window:AddTab(tabName)
+    local tab = Window:AddTab(tabName, nil, { NoBorder = true })  -- no border on home tab
 
     -- Mark this tab as hidden so the sidebar builder skips it
     Library._hiddenTabs[tab] = true
