@@ -4810,11 +4810,13 @@ do
         local Container = Groupbox.Container
         local Blank
 
+        local _inputAlign = ({Left=Enum.TextXAlignment.Left,Center=Enum.TextXAlignment.Center,Right=Enum.TextXAlignment.Right})[Info.TextAlignment or "Left"] or Enum.TextXAlignment.Left
+
         local InputLabel = Library:CreateLabel({
             Size = UDim2.new(1, 0, 0, 15);
             TextSize = 14;
             Text = Info.Text;
-            TextXAlignment = Enum.TextXAlignment.Left;
+            TextXAlignment = _inputAlign;
             ZIndex = 5;
             Parent = Container;
         })
@@ -4892,7 +4894,7 @@ do
             TextColor3 = Library.FontColor;
             TextSize = 14;
             TextStrokeTransparency = 0;
-            TextXAlignment = Enum.TextXAlignment.Left;
+            TextXAlignment = _inputAlign;
 
             TextEditable = not Textbox.Disabled;
             ClearTextOnFocus = not Textbox.Disabled and Info.ClearTextOnFocus;
@@ -9430,7 +9432,7 @@ function Library:CreateWindow(...)
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
         do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
-           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Inset  -- Inset: no 0.5px overflow below button
+           tbs.ApplyStrokeMode=Enum.ApplyStrokeMode.Contextual  -- Contextual hugs the UICorner shape
            tbs.Parent=TabButton
            Library:AddToRegistry(tbs, { Color = "OutlineColor" }) end
 
