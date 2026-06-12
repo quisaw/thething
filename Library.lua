@@ -8272,7 +8272,7 @@ do
             imgLbl.ZIndex      = 11006
             imgLbl.Parent      = NotifyInner   -- outside InnerFrame to avoid clipping
             -- Shift InnerFrame right to give the icon space
-            local _shift = _isz + _ipad * 2
+            local _shift = _ilpad + _isz + _irgap
             InnerFrame.Position = UDim2.new(0, _shift + 1, 0, 1)
             InnerFrame.Size     = UDim2.new(1, -_shift - 2, 1, -2)
             ExtraWidth = ExtraWidth + _shift   -- Data:Resize() uses this
@@ -8399,11 +8399,11 @@ do
             _TweenNotify(NotifyOuter, UDim2.new(0, XSize * DPIScale + 8 + 4 + ExtraWidth, 0, YSize))
             -- Letter-by-letter reveal after expand animation completes
             task.spawn(function()
-                task.wait(0.35)
+                task.wait(0.18)   -- shorter pre-delay; text appears almost immediately
                 if not NotifyOuter.Parent then return end
                 local text    = NotifyLabel.Text
                 local fullLen = utf8.len(text) or #text
-                local delay   = math.clamp(0.5 / math.max(fullLen, 1), 0.008, 0.04)
+                local delay   = math.clamp(0.25 / math.max(fullLen, 1), 0.004, 0.018)
                 for i = 1, fullLen do
                     if not NotifyOuter.Parent then break end
                     NotifyLabel.MaxVisibleGraphemes = i
@@ -11644,6 +11644,7 @@ end
 
     Library._MSI          = MainSectionInner
     Library._TabArea      = TabArea
+    Library._TabListLayout = TabArea:FindFirstChildOfClass("UIListLayout")
     Library._TabContainer = TabContainer
     Library._Inner        = Inner         -- needed for home tab title-bar button
     Library._headerHeight = headerHeight  -- used to vertically centre the title-bar button
@@ -12283,6 +12284,7 @@ function Library:ApplySidebarLayout()
     local ll=Instance.new("UIListLayout"); ll.FillDirection=Enum.FillDirection.Vertical
     ll.HorizontalAlignment=Enum.HorizontalAlignment.Center; ll.VerticalAlignment=Enum.VerticalAlignment.Top
     ll.SortOrder=Enum.SortOrder.LayoutOrder; ll.Padding=UDim.new(0,4); ll.Parent=tabInner
+    Library._sbTabInnerLL = ll
     local pad=Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0,4)
     pad.PaddingLeft=UDim.new(0,6); pad.PaddingRight=UDim.new(0,6); pad.PaddingBottom=UDim.new(0,4)
     pad.Parent=tabInner
@@ -12909,6 +12911,47 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
     WmDep:AddToggle("WmLockElems", { Text = "Lock Element Order",       Default = false, Callback = function(v) wm.lockElems = v; wm:Build() end })
     WmDep:AddToggle("WmLockPos",   { Text = "Lock Watermark Position",  Default = false, Callback = function(v) wm.lockPos   = v; wm:Build() end })
     WmDep:SetupDependencies({{ Togs["WmEnabled"], true }})
+
+    -- ── Title text animation ─────────────────────────────────────────────────
+    local TitleBox = tab:AddRightGroupbox("Title Animation")
+    TitleBox:AddToggle("TitleAnimSync", {
+        Text = "Sync with Watermark", Default = false,
+        Callback = function(v) Library:SetTitleAnimSync(v) end,
+    })
+    local TitleSyncDep = TitleBox:AddDependencyBox()
+    TitleSyncDep:AddDropdown("TitleAnimMode", {
+        Text = "Title Effect", Values = {"None","Wave","Matrix","Scroll"}, Default = 1,
+        Callback = function(v) Library:SetTitleAnimation(v) end,
+    })
+    local TitleWaveDep = TitleSyncDep:AddDependencyBox()
+    TitleWaveDep:AddDropdown("TitleWaveDir", {
+        Text = "Wave Direction", Values = {"Left to Right","Right to Left","Center Out"}, Default = 1,
+        Callback = function(v)
+            Library.TitleAnimConfig.dir = v
+            if Library.TitleAnimConfig.anim == "Wave" then Library:_RebuildTitleAnim() end
+        end,
+    })
+    TitleWaveDep:SetupDependencies({{ Opts["TitleAnimMode"], "Wave" }})
+    TitleSyncDep:AddSlider("TitleAnimSpeed", {
+        Text = "Effect Speed", Default = 1, Min = 0.2, Max = 5, Rounding = 1,
+        Callback = function(v) Library:SetTitleAnimSpeed(v) end,
+    })
+    TitleSyncDep:SetupDependencies({{ Togs["TitleAnimSync"], false }})
+
+    -- ── Tab layout ───────────────────────────────────────────────────────────
+    local TabBox = tab:AddRightGroupbox("Tab Layout")
+    TabBox:AddToggle("TabFill", {
+        Text = "Fill Tab Bar", Default = false,
+        Callback = function(v) Library:SetTabFill(v) end,
+    })
+    TabBox:AddDropdown("TabAlign", {
+        Text = "Tab Alignment", Values = {"Left","Center","Right"}, Default = 1,
+        Callback = function(v) Library:SetTabAlignment(v) end,
+    })
+    TabBox:AddDropdown("SidebarTabAlign", {
+        Text = "Sidebar Alignment", Values = {"Top","Center","Bottom"}, Default = 1,
+        Callback = function(v) Library:SetTabAlignment(v) end,
+    })
 end
 Library._colorPing = false   -- used by watermark ping coloring
 
@@ -13015,6 +13058,184 @@ function Library:SetupVersionCheck(config)
     end)
 end
 
+
+-- ── Tab layout API ─────────────────────────────────────────────────────────────
+-- Library:SetTabFill(true)           → stretch tab buttons to fill the entire tab bar
+-- Library:SetTabAlignment("Center")  → "Left"|"Center"|"Right" (topbar) / "Top"|"Center"|"Bottom" (sidebar)
+
+function Library:SetTabFill(enabled)
+    Library._tabFill = enabled
+    if not Library._TabArea then return end
+    local buttons = {}
+    for _, child in ipairs(Library._TabArea:GetChildren()) do
+        if child:IsA("Frame") and child.Size.X.Offset > 4 then
+            table.insert(buttons, child)
+        end
+    end
+    if #buttons == 0 then return end
+    if enabled then
+        -- AbsoluteSize may be 0 on first frame; defer one tick
+        task.defer(function()
+            if not Library._TabArea then return end
+            local ll  = Library._TabListLayout
+            local pad = ll and ll.Padding.Offset or 8
+            local totalW = Library._TabArea.AbsoluteSize.X
+            local w = math.floor((totalW - pad * (#buttons - 1)) / #buttons)
+            if w < 10 then return end
+            for _, b in ipairs(buttons) do
+                b.Size = UDim2.new(0, w, b.Size.Y.Scale, b.Size.Y.Offset)
+            end
+        end)
+    end
+end
+
+function Library:SetTabAlignment(align)
+    Library._tabAlignment = align
+    -- Topbar
+    if Library._TabListLayout then
+        local hMap = {
+            Left   = Enum.HorizontalAlignment.Left,
+            Center = Enum.HorizontalAlignment.Center,
+            Right  = Enum.HorizontalAlignment.Right,
+        }
+        if hMap[align] then Library._TabListLayout.HorizontalAlignment = hMap[align] end
+    end
+    -- Sidebar tabInner
+    if Library._sbTabInnerLL then
+        local vMap = {
+            Top    = Enum.VerticalAlignment.Top,
+            Center = Enum.VerticalAlignment.Center,
+            Bottom = Enum.VerticalAlignment.Bottom,
+        }
+        if vMap[align] then Library._sbTabInnerLL.VerticalAlignment = vMap[align] end
+    end
+end
+
+-- ── Window title animation ─────────────────────────────────────────────────────
+-- Library:SetTitleAnimation("Wave"|"Matrix"|"Scroll"|"None")
+-- Library:SetTitleAnimSpeed(speed)
+-- Library:SetTitleAnimSync(true)   → mirror WM animation exactly
+-- Library.TitleAnimConfig table holds settings; all applied through _RebuildTitleAnim
+
+Library.TitleAnimConfig = {
+    anim  = "None"; speed = 1; dir = "Left to Right";
+    sync  = false;  -- when true: mirrors Library.WM exactly
+}
+
+function Library:_RebuildTitleAnim()
+    local cfg  = Library.TitleAnimConfig
+    local lbl  = Library._windowLabel
+    local text = Library._windowLabelText or ""
+    if not lbl or text == "" then return end
+
+    -- Disconnect old animation
+    if Library._titleAnimConn then
+        pcall(function() Library._titleAnimConn:Disconnect() end)
+        Library._titleAnimConn = nil
+    end
+    for _, c in ipairs(Library._titleCharLabels or {}) do
+        pcall(function() c:Destroy() end)
+    end
+    Library._titleCharLabels = {}
+
+    local anim = cfg.sync and Library.WM and Library.WM.titleAnim or cfg.anim
+    if not anim or anim == "None" then
+        lbl.Text = text
+        lbl.AutomaticSize = Enum.AutomaticSize.X
+        lbl.ClipsDescendants = false
+        return
+    end
+
+    lbl.Text = ""
+    local font = Library.Font or Enum.Font.Gotham
+    local TS   = cloneref(game:GetService("TextService"))
+    local SYMS = {"#","@","$","%","&","*","!","?","/","+","=","~","^","<",">"}
+
+    local charWidths, totalW = {}, 0
+    for i = 1, #text do
+        local ch = text:sub(i,i)
+        local ok, w = pcall(function() return TS:GetTextSize(ch, 16, font, Vector2.new(999,999)).X end)
+        charWidths[i] = (ok and w > 0) and w or 10
+        totalW = totalW + charWidths[i]
+    end
+
+    lbl.AutomaticSize = Enum.AutomaticSize.None
+    lbl.Size = UDim2.fromOffset(totalW, 18)
+    lbl.ClipsDescendants = (anim == "Scroll")
+
+    local charData, xAcc = {}, 0
+    for i = 1, #text do
+        local ch = text:sub(i,i)
+        local c  = Instance.new("TextLabel")
+        c.BackgroundTransparency = 1
+        c.Font = font; c.Text = ch; c.TextSize = 16
+        c.TextColor3 = lbl.TextColor3
+        c.Size = UDim2.fromOffset(charWidths[i], 18)
+        c.Position = UDim2.fromOffset(xAcc, 0)
+        c.ZIndex = lbl.ZIndex; c.Parent = lbl
+        charData[i] = {lbl=c, orig=ch, x=xAcc}
+        table.insert(Library._titleCharLabels, c)
+        xAcc = xAcc + charWidths[i]
+    end
+
+    local t0 = Library.WM and cfg.sync and Library.WM._t0 or tick()
+
+    if anim == "Wave" then
+        local AMP = 3; local N = #charData
+        Library._titleAnimConn = RunService.RenderStepped:Connect(function()
+            local spd = cfg.sync and Library.WM and Library.WM.titleAnimSpeed or cfg.speed
+            local dir = cfg.sync and Library.WM and Library.WM.titleAnimDir or cfg.dir
+            local t = (tick() - t0) * spd
+            for i, d in ipairs(charData) do
+                local phase
+                if dir == "Right to Left" then phase = t*4 + i*0.55
+                elseif dir == "Center Out" then phase = t*4 - math.abs(i-(N+1)/2)*0.55
+                else phase = t*4 - i*0.55 end
+                d.lbl.Position = UDim2.fromOffset(d.x, math.floor(math.sin(phase)*AMP+0.5))
+            end
+        end)
+    elseif anim == "Matrix" then
+        local matTimers = {}
+        for i = 1, #charData do matTimers[i] = math.random()*0.6 end
+        Library._titleAnimConn = RunService.RenderStepped:Connect(function()
+            local spd = cfg.sync and Library.WM and Library.WM.titleAnimSpeed or cfg.speed
+            for i, d in ipairs(charData) do
+                matTimers[i] = matTimers[i] - 0.016*spd
+                if matTimers[i] <= 0 then
+                    d.lbl.Text = math.random()<0.25 and SYMS[math.random(#SYMS)] or d.orig
+                    matTimers[i] = math.random()*0.8+0.3
+                end
+            end
+        end)
+    elseif anim == "Scroll" then
+        local tickW = math.min(totalW, 100)
+        lbl.Size = UDim2.fromOffset(tickW, 18)
+        local scrollX = tickW
+        Library._titleAnimConn = RunService.RenderStepped:Connect(function()
+            local spd = cfg.sync and Library.WM and Library.WM.titleAnimSpeed or cfg.speed
+            scrollX = scrollX - 1.4*spd
+            if scrollX < -totalW then scrollX = tickW end
+            for _, d in ipairs(charData) do
+                d.lbl.Position = UDim2.fromOffset(d.x + scrollX, 0)
+            end
+        end)
+    end
+
+    -- Store t0 so WM can sync to same phase
+    Library._titleAnimT0 = t0
+end
+
+function Library:SetTitleAnimation(anim)
+    Library.TitleAnimConfig.anim = anim
+    Library:_RebuildTitleAnim()
+end
+function Library:SetTitleAnimSpeed(spd)
+    Library.TitleAnimConfig.speed = spd
+end
+function Library:SetTitleAnimSync(enabled)
+    Library.TitleAnimConfig.sync = enabled
+    Library:_RebuildTitleAnim()
+end
 -- ── Executor detection ────────────────────────────────────────────────────────
 -- Uses identifyexecutor() from the sUNC standard (supported by most modern executors).
 -- Returns (name: string, version: string).
