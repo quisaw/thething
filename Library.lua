@@ -13097,7 +13097,7 @@ function Library:_ApplyTabFill()
     for _, b in ipairs(Library._allTabButtons or {}) do
         if b.Parent == Library._TabArea then
             if b == Library._homeTabButton then
-                homeW = b.AbsoluteSize.X  -- home tab keeps its size; deduct from available space
+                homeW = b.AbsoluteSize.X
             else
                 table.insert(btns, b)
             end
@@ -13105,11 +13105,19 @@ function Library:_ApplyTabFill()
     end
     local n = #btns; if n == 0 then return end
     local ll = Library._TabListLayout
-    if ll then
-        ll.Padding = UDim.new(0, 0)
-        ll.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    if ll then ll.Padding = UDim.new(0, 0); ll.HorizontalAlignment = Enum.HorizontalAlignment.Left end
+
+    -- Add UIPadding to align tabs with the window content area (which starts at x=8)
+    local INSET_L, INSET_R = 8, 8
+    local pad = Library._tabFillUIPad
+    if not pad then
+        pad = Instance.new("UIPadding"); pad.Parent = Library._TabArea
+        Library._tabFillUIPad = pad
     end
-    local totalW = Library._TabArea.AbsoluteSize.X - homeW
+    pad.PaddingLeft  = UDim.new(0, INSET_L)
+    pad.PaddingRight = UDim.new(0, INSET_R)
+
+    local totalW = Library._TabArea.AbsoluteSize.X - homeW - INSET_L - INSET_R
     if totalW < 10 then return end
     local w = math.floor(totalW / n)
     for i, b in ipairs(btns) do
@@ -13142,11 +13150,15 @@ function Library:SetTabFill(enabled)
             Library:_ApplyTabFill()
         end)
     else
-        -- Restore padding, alignment, and original sizes
+        -- Remove fill UIPadding and restore layout
+        if Library._tabFillUIPad then
+            pcall(function() Library._tabFillUIPad:Destroy() end)
+            Library._tabFillUIPad = nil
+        end
         local ll = Library._TabListLayout
         if ll then
             ll.Padding = UDim.new(0, Library._tabPadding or 8)
-            ll.HorizontalAlignment = Enum.HorizontalAlignment.Left  -- default
+            ll.HorizontalAlignment = Enum.HorizontalAlignment.Left
         end
         if Library._origTabSizes then
             for b, sz in pairs(Library._origTabSizes) do
