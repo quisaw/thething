@@ -8263,7 +8263,7 @@ do
 
         -- Raw image asset ID support (parented to NotifyInner to avoid InnerFrame ClipsDescendants)
         if Data.Image and Data.Image ~= "" then
-            local _isz, _ilpad, _irgap = 20, 10, 12  -- icon size, left pad, right gap
+            local _isz, _ilpad, _irgap = 20, 6, 8   -- icon size, left pad, right gap
             local imgLbl = Instance.new("ImageLabel")  -- Instance.new avoids DPI scaling
             imgLbl.BackgroundTransparency = 1
             imgLbl.AnchorPoint = Vector2.new(0, 0.5)
@@ -8284,7 +8284,7 @@ do
         if Data.Icon then
             local ParsedIcon = Library:GetCustomIcon(Data.Icon)
             if ParsedIcon then
-                local _iSz, _iLPad, _iRGap = 16, 8, 10
+                local _iSz, _iLPad, _iRGap = 16, 5, 8
                 local _iShift = _iLPad + _iSz + _iRGap   -- 34px total shift
 
                 IconLabel = Instance.new("ImageLabel")
@@ -9445,8 +9445,11 @@ function Library:CreateWindow(...)
             BackgroundColor3 = "BackgroundColor";
             BorderColor3 = "OutlineColor";
         })
+        TabButton.Name             = "_StarlightTabBtn"  -- unique tag so fill can find real buttons
         TabButton.BorderSizePixel  = 0
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
+        Library._allTabButtons = Library._allTabButtons or {}
+        table.insert(Library._allTabButtons, TabButton)
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
         if not _noBorder then
             do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
@@ -13088,15 +13091,16 @@ end
 -- Internal: apply even-width fill to all tab buttons
 function Library:_ApplyTabFill()
     if not Library._tabFill or not Library._TabArea then return end
+    -- Only resize genuine tab buttons (tagged at creation time)
     local btns = {}
-    for _, c in ipairs(Library._TabArea:GetChildren()) do
-        if c:IsA("Frame") then table.insert(btns, c) end
+    for _, b in ipairs(Library._allTabButtons or {}) do
+        if b.Parent == Library._TabArea then table.insert(btns, b) end
     end
     local n = #btns; if n == 0 then return end
     local ll = Library._TabListLayout
     if ll then
-        ll.Padding = UDim.new(0, 0)                                  -- no gaps
-        ll.HorizontalAlignment = Enum.HorizontalAlignment.Left        -- anchor at x=0
+        ll.Padding = UDim.new(0, 0)
+        ll.HorizontalAlignment = Enum.HorizontalAlignment.Left
     end
     local totalW = Library._TabArea.AbsoluteSize.X
     if totalW < 10 then return end
@@ -13116,11 +13120,11 @@ function Library:SetTabFill(enabled)
     end
     if not Library._TabArea then return end
     if enabled then
-        -- Snapshot original sizes once
+        -- Snapshot original sizes once (only real tab buttons)
         if not Library._origTabSizes then
             Library._origTabSizes = {}
-            for _, c in ipairs(Library._TabArea:GetChildren()) do
-                if c:IsA("Frame") then Library._origTabSizes[c] = c.Size end
+            for _, b in ipairs(Library._allTabButtons or {}) do
+                if b.Parent == Library._TabArea then Library._origTabSizes[b] = b.Size end
             end
         end
         -- Apply now and re-apply whenever the tab area resizes (window resize)
