@@ -1489,6 +1489,8 @@ function Library:Unload()
     end
 
     pcall(function() ScreenGui:Destroy() end)
+    -- Restore mouse cursor in case the library had hidden it (Drawing cursor system)
+    pcall(function() cloneref(game:GetService("UserInputService")).MouseIconEnabled = true end)
 
     getgenv().Linoria = nil
 end
@@ -8261,11 +8263,11 @@ do
 
         -- Raw image asset ID support (parented to NotifyInner to avoid InnerFrame ClipsDescendants)
         if Data.Image and Data.Image ~= "" then
-            local _isz, _ipad = 20, 5
+            local _isz, _ilpad, _irgap = 20, 10, 12  -- icon size, left pad, right gap
             local imgLbl = Instance.new("ImageLabel")  -- Instance.new avoids DPI scaling
             imgLbl.BackgroundTransparency = 1
             imgLbl.AnchorPoint = Vector2.new(0, 0.5)
-            imgLbl.Position    = UDim2.new(0, _ipad, 0.5, 0)
+            imgLbl.Position    = UDim2.new(0, _ilpad, 0.5, 0)
             imgLbl.Size        = UDim2.fromOffset(_isz, _isz)
             imgLbl.Image       = Data.Image
             imgLbl.ImageColor3 = Data.ImageColor or Color3.new(1, 1, 1)
@@ -11647,6 +11649,7 @@ end
     Library._MSI          = MainSectionInner
     Library._TabArea      = TabArea
     Library._TabListLayout = TabArea:FindFirstChildOfClass("UIListLayout")
+    Library._tabPadding   = WindowInfo.TabPadding or 8
     Library._TabContainer = TabContainer
     Library._Inner        = Inner         -- needed for home tab title-bar button
     Library._headerHeight = headerHeight  -- used to vertically centre the title-bar button
@@ -12091,9 +12094,9 @@ function Library:SetTabNamesVisible(visible)
                 lbl.Size     = orig.lblSize
             end
         else
-            -- Clear text; shrink to icon-only square
-            lbl.Text = ""
+            -- Shrink to icon-only. If no icon is configured, keep full-width tab to avoid "disappearing".
             if icon and orig then
+                lbl.Text = ""
                 icon.AnchorPoint = Vector2.new(0.5, 0.5)
                 icon.Position    = UDim2.new(0.5, 0, 0.5, 0)
                 lbl.Position     = UDim2.new(0, 0, 0, 0)
@@ -12101,6 +12104,13 @@ function Library:SetTabNamesVisible(visible)
                 btn.Size         = UDim2.new(orig.btnSize.X.Scale, 30,
                                               orig.btnSize.Y.Scale,
                                               orig.btnSize.Y.Offset)
+            elseif orig then
+                -- No icon set: show first-letter abbreviation so tab stays visible
+                lbl.Text     = (d.name or "?"):sub(1,1):upper()
+                lbl.Position = orig.lblPos
+                lbl.Size     = orig.lblSize
+                btn.Size     = UDim2.new(orig.btnSize.X.Scale, 28,
+                                          orig.btnSize.Y.Scale, orig.btnSize.Y.Offset)
             end
         end
     end
@@ -13081,24 +13091,37 @@ function Library:SetTabFill(enabled)
     end
     if #buttons == 0 then return end
     if enabled then
-        -- Save originals before resizing so disable can restore them
+        -- Save originals before resizing (captured fresh so stale refs don't persist)
         if not Library._origTabSizes then
             Library._origTabSizes = {}
             for _, b in ipairs(buttons) do Library._origTabSizes[b] = b.Size end
         end
         task.defer(function()
             if not Library._TabArea then return end
+            -- Re-capture buttons inside defer so AbsoluteSize is resolved
+            local freshBtns = {}
+            for _, child in ipairs(Library._TabArea:GetChildren()) do
+                if child:IsA("Frame") and child.AbsoluteSize.X > 2 then
+                    table.insert(freshBtns, child)
+                end
+            end
+            local n = #freshBtns; if n == 0 then return end
             local ll  = Library._TabListLayout
-            local pad = ll and ll.Padding.Offset or 8
+            local pad = ll and ll.Padding.Offset or 0  -- set pad=0 while in fill mode
+            if ll then ll.Padding = UDim.new(0, 0) end  -- remove gaps to fill completely
             local totalW = Library._TabArea.AbsoluteSize.X
-            local w = math.floor((totalW - pad * (#buttons - 1)) / #buttons)
-            if w < 10 then return end
-            for _, b in ipairs(buttons) do
-                b.Size = UDim2.new(0, w, b.Size.Y.Scale, b.Size.Y.Offset)
+            if totalW < 10 then return end
+            local w = math.floor(totalW / n)
+            for i, b in ipairs(freshBtns) do
+                -- Last button gets any remaining pixels from rounding
+                local bw = (i == n) and (totalW - w * (n - 1)) or w
+                b.Size = UDim2.new(0, bw, b.Size.Y.Scale, b.Size.Y.Offset)
             end
         end)
     else
-        -- Restore original sizes
+        -- Restore original sizes and layout padding
+        local ll2 = Library._TabListLayout
+        if ll2 then ll2.Padding = UDim.new(0, Library._tabPadding or 8) end
         if Library._origTabSizes then
             for _, b in ipairs(buttons) do
                 if Library._origTabSizes[b] then
