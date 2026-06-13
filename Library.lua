@@ -9450,7 +9450,10 @@ function Library:CreateWindow(...)
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Library._allTabButtons = Library._allTabButtons or {}
         table.insert(Library._allTabButtons, TabButton)
-        if _noBorder then Library._homeTabButton = TabButton end  -- home tab gets special treatment
+        if _noBorder then
+            Library._homeTabButton = TabButton
+            TabButton.Visible = false  -- hidden from tab bar; _StarlightHomeBtn in header handles Overview nav
+        end
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
         if not _noBorder then
             do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
@@ -13126,8 +13129,7 @@ end
 function Library:_ApplyTabFill()
     if not Library._tabFill or not Library._TabArea then return end
 
-    -- Hide home tab from UIListLayout during fill (it would eat trailing space)
-    if Library._homeTabButton then Library._homeTabButton.Visible = false end
+        if Library._homeTabButton then Library._homeTabButton.Visible = false end
 
     -- Collect non-home tab buttons
     local btns = {}
@@ -13200,7 +13202,7 @@ function Library:SetTabFill(enabled)
             pcall(function() Library._tabFillUIPad:Destroy() end)
             Library._tabFillUIPad = nil
         end
-        if Library._homeTabButton then Library._homeTabButton.Visible = true end
+        if Library._homeTabButton then Library._homeTabButton.Visible = false end  -- always hidden
         local ll = Library._TabListLayout
         if ll then
             ll.Padding = UDim.new(0, Library._tabPadding or 8)
