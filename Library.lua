@@ -8284,36 +8284,29 @@ do
         if Data.Icon then
             local ParsedIcon = Library:GetCustomIcon(Data.Icon)
             if ParsedIcon then
-                ExtraWidth = ExtraWidth + 20
-                TextSizeOffsetX = TextSizeOffsetX - 20
-                TextSizeOffsetY = TextSizeOffsetY - 2
+                local _iSz, _iLPad, _iRGap = 16, 8, 10
+                local _iShift = _iLPad + _iSz + _iRGap   -- 34px total shift
 
-                if Side == "left" then
-                    TextPosition = UDim2.new(0, 24, 0, 0)
-                end
-
-                IconLabel = Library:Create("ImageLabel", {
-                    BackgroundTransparency = 1,
-                    AnchorPoint = Vector2.new(0, 0.5),
-                    Position = if Side == "left" then UDim2.new(0, 6, 0.5, 0) else UDim2.new(0, 4, 0.5, 0),
-                    Size = UDim2.fromOffset(14, 14),
-                    Image = ParsedIcon.Url,
-                    ImageColor3 = Data.IconColor or Library.FontColor,
-                    ImageRectOffset = ParsedIcon.ImageRectOffset,
-                    ImageRectSize = ParsedIcon.ImageRectSize,
-                    ZIndex = 11004,
-                    Parent = InnerFrame,
-                })
+                IconLabel = Instance.new("ImageLabel")
+                IconLabel.BackgroundTransparency = 1
+                IconLabel.AnchorPoint  = Vector2.new(0, 0.5)
+                IconLabel.Position     = UDim2.new(0, _iLPad, 0.5, 0)
+                IconLabel.Size         = UDim2.fromOffset(_iSz, _iSz)
+                IconLabel.Image        = ParsedIcon.Url
+                IconLabel.ImageColor3  = Data.IconColor or Library.FontColor
+                IconLabel.ImageRectOffset = ParsedIcon.ImageRectOffset
+                IconLabel.ImageRectSize   = ParsedIcon.ImageRectSize
+                IconLabel.ZIndex       = 11006
+                IconLabel.Parent       = NotifyInner   -- outside InnerFrame so text never overlaps
 
                 if not Data.IconColor then
-                    Library:AddToRegistry(IconLabel, {
-                        ImageColor3 = "FontColor";
-                    }, true)
+                    Library:AddToRegistry(IconLabel, { ImageColor3 = "FontColor" }, true)
                 end
 
-                if Side == "right" then
-                    TextPosition = UDim2.new(1, -8, 0, 0)
-                end
+                -- Shift InnerFrame right to leave room for the icon
+                InnerFrame.Position = UDim2.new(0, _iShift + 1, 0, 1)
+                InnerFrame.Size     = UDim2.new(1, -_iShift - 2, 1, -2)
+                ExtraWidth = ExtraWidth + _iShift
             end
         end
 
@@ -12865,7 +12858,19 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
         Text = "Show Keybind List", Default = true,
         Callback = function(v)
             Library._keybindListVisible = v
-            if Library._starlightKbFrame then Library._starlightKbFrame.Visible = v end
+            local kbf = Library._starlightKbFrame
+            if kbf and not v then
+                -- Immediate fade-out; _RebuildKeybindList handles fade-IN so the list
+                -- never flashes visible before its content is ready
+                Library._kbFadeOut = true
+                TweenService:Create(kbf, TweenInfo.new(0.25, Enum.EasingStyle.Quad),
+                    { GroupTransparency = 1 }):Play()
+                task.delay(0.26, function()
+                    Library._kbFadeOut = false
+                    if kbf.Parent then kbf.Visible = false end
+                end)
+            end
+            -- Enabling: don't touch Visible here — let _RebuildKeybindList fade it in
         end,
     })
 
@@ -13080,53 +13085,59 @@ end
 -- Library:SetTabFill(true)           → stretch tab buttons to fill the entire tab bar
 -- Library:SetTabAlignment("Center")  → "Left"|"Center"|"Right" (topbar) / "Top"|"Center"|"Bottom" (sidebar)
 
+-- Internal: apply even-width fill to all tab buttons
+function Library:_ApplyTabFill()
+    if not Library._tabFill or not Library._TabArea then return end
+    local btns = {}
+    for _, c in ipairs(Library._TabArea:GetChildren()) do
+        if c:IsA("Frame") then table.insert(btns, c) end
+    end
+    local n = #btns; if n == 0 then return end
+    local ll = Library._TabListLayout
+    if ll then
+        ll.Padding = UDim.new(0, 0)                                  -- no gaps
+        ll.HorizontalAlignment = Enum.HorizontalAlignment.Left        -- anchor at x=0
+    end
+    local totalW = Library._TabArea.AbsoluteSize.X
+    if totalW < 10 then return end
+    local w = math.floor(totalW / n)
+    for i, b in ipairs(btns) do
+        local bw = (i == n) and (totalW - w*(n-1)) or w
+        b.Size = UDim2.new(0, bw, b.Size.Y.Scale, b.Size.Y.Offset)
+    end
+end
+
 function Library:SetTabFill(enabled)
     Library._tabFill = enabled
-    if not Library._TabArea then return end
-    local buttons = {}
-    for _, child in ipairs(Library._TabArea:GetChildren()) do
-        if child:IsA("Frame") and child.Size.X.Offset > 4 then
-            table.insert(buttons, child)
-        end
+    -- Disconnect previous resize listener
+    if Library._tabFillConn then
+        pcall(function() Library._tabFillConn:Disconnect() end)
+        Library._tabFillConn = nil
     end
-    if #buttons == 0 then return end
+    if not Library._TabArea then return end
     if enabled then
-        -- Save originals before resizing (captured fresh so stale refs don't persist)
+        -- Snapshot original sizes once
         if not Library._origTabSizes then
             Library._origTabSizes = {}
-            for _, b in ipairs(buttons) do Library._origTabSizes[b] = b.Size end
+            for _, c in ipairs(Library._TabArea:GetChildren()) do
+                if c:IsA("Frame") then Library._origTabSizes[c] = c.Size end
+            end
         end
-        task.defer(function()
-            if not Library._TabArea then return end
-            -- Re-capture buttons inside defer so AbsoluteSize is resolved
-            local freshBtns = {}
-            for _, child in ipairs(Library._TabArea:GetChildren()) do
-                if child:IsA("Frame") and child.AbsoluteSize.X > 2 then
-                    table.insert(freshBtns, child)
-                end
-            end
-            local n = #freshBtns; if n == 0 then return end
-            local ll  = Library._TabListLayout
-            local pad = ll and ll.Padding.Offset or 0  -- set pad=0 while in fill mode
-            if ll then ll.Padding = UDim.new(0, 0) end  -- remove gaps to fill completely
-            local totalW = Library._TabArea.AbsoluteSize.X
-            if totalW < 10 then return end
-            local w = math.floor(totalW / n)
-            for i, b in ipairs(freshBtns) do
-                -- Last button gets any remaining pixels from rounding
-                local bw = (i == n) and (totalW - w * (n - 1)) or w
-                b.Size = UDim2.new(0, bw, b.Size.Y.Scale, b.Size.Y.Offset)
-            end
+        -- Apply now and re-apply whenever the tab area resizes (window resize)
+        Library:_ApplyTabFill()
+        Library._tabFillConn = Library._TabArea:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+            Library:_ApplyTabFill()
         end)
     else
-        -- Restore original sizes and layout padding
-        local ll2 = Library._TabListLayout
-        if ll2 then ll2.Padding = UDim.new(0, Library._tabPadding or 8) end
+        -- Restore padding, alignment, and original sizes
+        local ll = Library._TabListLayout
+        if ll then
+            ll.Padding = UDim.new(0, Library._tabPadding or 8)
+            ll.HorizontalAlignment = Enum.HorizontalAlignment.Left  -- default
+        end
         if Library._origTabSizes then
-            for _, b in ipairs(buttons) do
-                if Library._origTabSizes[b] then
-                    b.Size = Library._origTabSizes[b]
-                end
+            for b, sz in pairs(Library._origTabSizes) do
+                if b.Parent then b.Size = sz end
             end
             Library._origTabSizes = nil
         end
@@ -13780,9 +13791,12 @@ local function _ensureKbFrame()
     kbPad.PaddingTop=UDim.new(0,2); kbPad.PaddingBottom=UDim.new(0,3)
     kbPad.Parent = cc
 
+    outer.Active = false  -- don't intercept scroll events from underlying ScrollingFrame
     -- Drag
     local dragActive,dragStart,dragOrigin=false,Vector2.zero,outer.Position
     outer.InputBegan:Connect(function(inp)
+        -- Explicitly pass scroll-wheel events through so menu scrolling always works
+        if inp.UserInputType == Enum.UserInputType.MouseWheel then return end
         if inp.UserInputType~=Enum.UserInputType.MouseButton1 then return end
         dragActive=true; dragStart=Vector2.new(inp.Position.X,inp.Position.Y); dragOrigin=outer.Position
     end)
