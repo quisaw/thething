@@ -8263,7 +8263,7 @@ do
 
         -- Raw image asset ID support (parented to NotifyInner to avoid InnerFrame ClipsDescendants)
         if Data.Image and Data.Image ~= "" then
-            local _isz, _ilpad, _irgap = 20, 6, 8   -- icon size, left pad, right gap
+            local _isz, _ilpad, _irgap = 20, 8, 5   -- icon size, left pad, right gap
             local imgLbl = Instance.new("ImageLabel")  -- Instance.new avoids DPI scaling
             imgLbl.BackgroundTransparency = 1
             imgLbl.AnchorPoint = Vector2.new(0, 0.5)
@@ -8284,7 +8284,7 @@ do
         if Data.Icon then
             local ParsedIcon = Library:GetCustomIcon(Data.Icon)
             if ParsedIcon then
-                local _iSz, _iLPad, _iRGap = 16, 5, 8
+                local _iSz, _iLPad, _iRGap = 16, 8, 5
                 local _iShift = _iLPad + _iSz + _iRGap   -- 34px total shift
 
                 IconLabel = Instance.new("ImageLabel")
@@ -9450,6 +9450,7 @@ function Library:CreateWindow(...)
         TabButton.ClipsDescendants = true  -- clips TabHighlight to rounded shape
         Library._allTabButtons = Library._allTabButtons or {}
         table.insert(Library._allTabButtons, TabButton)
+        if _noBorder then Library._homeTabButton = TabButton end  -- home tab gets special treatment
         Instance.new("UICorner", TabButton).CornerRadius = UDim.new(0, 4)
         if not _noBorder then
             do local tbs=Instance.new("UIStroke"); tbs.Color=Library.OutlineColor; tbs.Thickness=1
@@ -13091,10 +13092,16 @@ end
 -- Internal: apply even-width fill to all tab buttons
 function Library:_ApplyTabFill()
     if not Library._tabFill or not Library._TabArea then return end
-    -- Only resize genuine tab buttons (tagged at creation time)
-    local btns = {}
+    -- Only resize non-home tab buttons; home tab keeps its original size
+    local btns, homeW = {}, 0
     for _, b in ipairs(Library._allTabButtons or {}) do
-        if b.Parent == Library._TabArea then table.insert(btns, b) end
+        if b.Parent == Library._TabArea then
+            if b == Library._homeTabButton then
+                homeW = b.AbsoluteSize.X  -- home tab keeps its size; deduct from available space
+            else
+                table.insert(btns, b)
+            end
+        end
     end
     local n = #btns; if n == 0 then return end
     local ll = Library._TabListLayout
@@ -13102,7 +13109,7 @@ function Library:_ApplyTabFill()
         ll.Padding = UDim.new(0, 0)
         ll.HorizontalAlignment = Enum.HorizontalAlignment.Left
     end
-    local totalW = Library._TabArea.AbsoluteSize.X
+    local totalW = Library._TabArea.AbsoluteSize.X - homeW
     if totalW < 10 then return end
     local w = math.floor(totalW / n)
     for i, b in ipairs(btns) do
@@ -13124,7 +13131,9 @@ function Library:SetTabFill(enabled)
         if not Library._origTabSizes then
             Library._origTabSizes = {}
             for _, b in ipairs(Library._allTabButtons or {}) do
-                if b.Parent == Library._TabArea then Library._origTabSizes[b] = b.Size end
+                if b.Parent == Library._TabArea and b ~= Library._homeTabButton then
+                    Library._origTabSizes[b] = b.Size
+                end
             end
         end
         -- Apply now and re-apply whenever the tab area resizes (window resize)
