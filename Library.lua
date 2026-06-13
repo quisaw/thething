@@ -13092,36 +13092,45 @@ end
 -- Internal: apply even-width fill to all tab buttons
 function Library:_ApplyTabFill()
     if not Library._tabFill or not Library._TabArea then return end
-    -- Only resize non-home tab buttons; home tab keeps its original size
-    local btns, homeW = {}, 0
+
+    -- Collect non-home tab buttons
+    local btns = {}
     for _, b in ipairs(Library._allTabButtons or {}) do
-        if b.Parent == Library._TabArea then
-            if b == Library._homeTabButton then
-                homeW = b.AbsoluteSize.X
-            else
-                table.insert(btns, b)
-            end
+        if b.Parent == Library._TabArea and b ~= Library._homeTabButton then
+            table.insert(btns, b)
         end
     end
     local n = #btns; if n == 0 then return end
+
+    -- TabArea starts at x=0; content (TC) starts at x=8, ends 2px from TabArea right edge
+    local INSET_L, INSET_R = 8, 2
+
+    -- Ensure UIPadding exists to shift buttons right by INSET_L
+    if not Library._tabFillUIPad then
+        Library._tabFillUIPad = Instance.new("UIPadding")
+        Library._tabFillUIPad.Parent = Library._TabArea
+    end
+    Library._tabFillUIPad.PaddingLeft  = UDim.new(0, INSET_L)
+    Library._tabFillUIPad.PaddingRight = UDim.new(0, INSET_R)
+
     local ll = Library._TabListLayout
     if ll then ll.Padding = UDim.new(0, 0); ll.HorizontalAlignment = Enum.HorizontalAlignment.Left end
 
-    -- Add UIPadding to align tabs with the window content area (which starts at x=8)
-    local INSET_L, INSET_R = 8, 8
-    local pad = Library._tabFillUIPad
-    if not pad then
-        pad = Instance.new("UIPadding"); pad.Parent = Library._TabArea
-        Library._tabFillUIPad = pad
+    local totalW = Library._TabArea.AbsoluteSize.X
+    if totalW < 10 then
+        -- Frame not yet rendered; retry next frame
+        task.defer(function() Library:_ApplyTabFill() end)
+        return
     end
-    pad.PaddingLeft  = UDim.new(0, INSET_L)
-    pad.PaddingRight = UDim.new(0, INSET_R)
 
-    local totalW = Library._TabArea.AbsoluteSize.X - homeW - INSET_L - INSET_R
-    if totalW < 10 then return end
-    local w = math.floor(totalW / n)
+    -- Use Size.X.Offset (reliable before AbsoluteSize is computed) for home tab width
+    local homeW = (Library._homeTabButton and Library._homeTabButton.Size.X.Offset) or 0
+    local usableW = totalW - INSET_L - INSET_R - homeW
+    if usableW < 10 then return end
+
+    local w = math.floor(usableW / n)
     for i, b in ipairs(btns) do
-        local bw = (i == n) and (totalW - w*(n-1)) or w
+        local bw = (i == n) and (usableW - w*(n-1)) or w
         b.Size = UDim2.new(0, bw, b.Size.Y.Scale, b.Size.Y.Offset)
     end
 end
