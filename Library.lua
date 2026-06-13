@@ -8819,7 +8819,7 @@ function Library:CreateWindow(...)
         ScrollBarThickness = 0;
         BackgroundTransparency = 1;
         Position = UDim2.new(0, 8 - WindowInfo.TabPadding, 0, 4);
-        Size = UDim2.new(1, -10, 0, 26);
+        Size = UDim2.new(1, -8, 0, 26);  -- match TC right edge (TC is also -8 from parent)
         ZIndex = 1;
         Parent = MainSectionInner;
     })
@@ -12978,6 +12978,13 @@ function Library:BuildUISettingsTab(tab, _wmOverride)
         Text = "Sidebar Alignment", Values = {"Top","Center","Bottom"}, Default = 1,
         Callback = function(v) Library:SetTabAlignment(v) end,
     })
+
+    -- ── Window title alignment ───────────────────────────────────────────────
+    local TitleAlignBox = tab:AddRightGroupbox("Title Alignment")
+    TitleAlignBox:AddDropdown("WindowTitleAlign", {
+        Text = "Title Position", Values = {"Left","Center","Right"}, Default = 1,
+        Callback = function(v) Library:SetWindowTitleAlignment(v) end,
+    })
 end
 Library._colorPing = false   -- used by watermark ping coloring
 
@@ -13085,6 +13092,32 @@ function Library:SetupVersionCheck(config)
 end
 
 
+
+-- ── Window title alignment ─────────────────────────────────────────────────────
+-- Library:SetWindowTitleAlignment("Left"|"Center"|"Right")
+-- "Right" also moves the home/overview button to the left side of the header
+
+function Library:SetWindowTitleAlignment(align)
+    Library._titleAlignment = align
+    -- Update title label TextXAlignment
+    local lbl = Library._windowLabel
+    if lbl then
+        local aMap = {Left=Enum.TextXAlignment.Left, Center=Enum.TextXAlignment.Center, Right=Enum.TextXAlignment.Right}
+        if aMap[align] then lbl.TextXAlignment = aMap[align] end
+    end
+    -- Move home button: right-title → home on left; otherwise home on right
+    local hh  = Library._headerHeight or 25
+    local btn = Library._MSI and Library._MSI:FindFirstChild("_StarlightHomeBtn", true)
+    if btn then
+        if align == "Right" then
+            btn.AnchorPoint = Vector2.new(0, 0.5)
+            btn.Position    = UDim2.new(0, 4, 0, math.floor(hh / 2))
+        else
+            btn.AnchorPoint = Vector2.new(1, 0.5)
+            btn.Position    = UDim2.new(1, -4, 0, math.floor(hh / 2))
+        end
+    end
+end
 -- ── Tab layout API ─────────────────────────────────────────────────────────────
 -- Library:SetTabFill(true)           → stretch tab buttons to fill the entire tab bar
 -- Library:SetTabAlignment("Center")  → "Left"|"Center"|"Right" (topbar) / "Top"|"Center"|"Bottom" (sidebar)
@@ -13092,6 +13125,9 @@ end
 -- Internal: apply even-width fill to all tab buttons
 function Library:_ApplyTabFill()
     if not Library._tabFill or not Library._TabArea then return end
+
+    -- Hide home tab from UIListLayout during fill (it would eat trailing space)
+    if Library._homeTabButton then Library._homeTabButton.Visible = false end
 
     -- Collect non-home tab buttons
     local btns = {}
@@ -13124,8 +13160,8 @@ function Library:_ApplyTabFill()
     end
 
     -- Use Size.X.Offset (reliable before AbsoluteSize is computed) for home tab width
-    local homeW = (Library._homeTabButton and Library._homeTabButton.Size.X.Offset) or 0
-    local usableW = totalW - INSET_L - INSET_R - homeW
+    -- Home tab is hidden during fill; don't subtract its width
+    local usableW = totalW - INSET_L - INSET_R
     if usableW < 10 then return end
 
     local w = math.floor(usableW / n)
@@ -13159,11 +13195,12 @@ function Library:SetTabFill(enabled)
             Library:_ApplyTabFill()
         end)
     else
-        -- Remove fill UIPadding and restore layout
+        -- Remove fill UIPadding, restore home tab visibility and layout
         if Library._tabFillUIPad then
             pcall(function() Library._tabFillUIPad:Destroy() end)
             Library._tabFillUIPad = nil
         end
+        if Library._homeTabButton then Library._homeTabButton.Visible = true end
         local ll = Library._TabListLayout
         if ll then
             ll.Padding = UDim.new(0, Library._tabPadding or 8)
@@ -13723,15 +13760,10 @@ function Library:SetupHomeTab(Window, config)
         btn.ZIndex                 = 20
         btn.Parent                 = Inner
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-        local stroke               = Instance.new("UIStroke")
-        stroke.Color               = Library.OutlineColor
-        stroke.Thickness           = 1
-        stroke.ApplyStrokeMode     = Enum.ApplyStrokeMode.Border
-        stroke.Parent              = btn
+        -- No UIStroke on the home button per design spec
 
         local function setHomeActive(active)
             btn.BackgroundColor3 = active and Library.MainColor or Library.BackgroundColor
-            stroke.Color         = active and Library.AccentColor or Library.OutlineColor
         end
         setHomeActive(true)  -- home tab is active on load
 
